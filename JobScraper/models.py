@@ -26,5 +26,6 @@ class JobListing:
 class Skill:
     # Skills table
     job_id: str                  # Foreign key to JobListing
+    source: str                  # Which job board (e.g., "pracuj.pl")
     skill_name: str              # Name of the skill (SQL, Power BI, etc.)
     skill_category: str          # Category (Database, Visualization, etc.)
