@@ -384,13 +384,22 @@ class PracujScraper(BaseScraper):
                     
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # Find all job listings on the page using the provided selector
-                job_containers = soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
-                if not job_containers:
-                    # Try a more general selector if the specific one fails
-                    job_containers = soup.select("div.listing_ohw4t83")
+                # Find the main container with all job offers
+                offers_container = soup.find("div", attrs={"data-test": "section-offers"})
+                if not offers_container:
+                    logging.warning(f"Main offers container not found on page {current_page}")
+                    # Try fallback to the previous selectors
+                    job_containers = soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
                     if not job_containers:
-                        job_containers = soup.find_all("div", class_=lambda c: c and "listing_" in c)
+                        job_containers = soup.select("div.listing_ohw4t83")
+                        if not job_containers:
+                            job_containers = soup.find_all("div", class_=lambda c: c and "listing_" in c)
+                else:
+                    # Find all article elements within the offers container - these are individual job listings
+                    job_containers = offers_container.find_all("article")
+                    if not job_containers:
+                        # If no articles found, try div elements that might contain job listings
+                        job_containers = offers_container.find_all("div", recursive=False)
                 
                 logging.info(f"Found {len(job_containers)} job listings on page {current_page}")
                 
@@ -406,27 +415,35 @@ class PracujScraper(BaseScraper):
                 
                 for job_container in job_containers:
                     try:
-                        # Find the link to the job details
-                        link_container = job_container.select_one("div.tiles_cobg3mp")
-                        if not link_container:
-                            logging.info("Skipping job - could not find link container")
-                            continue
-                            # Try alternative selectors
-                            all_divs = job_container.find_all("div")
-                            for div in all_divs:
-                                if div.find("a", href=True):
-                                    link_container = div
+
+                        # Find the job URL - try multiple approaches
+                        job_url = None
+                        
+                        # Method 1: Look for any link with job-like keywords in the URL
+                        all_links = job_container.find_all("a", href=True)
+                        for link in all_links:
+                            href = link["href"]
+                            if any(keyword in href.lower() for keyword in ["praca/", "oferta/", "job/", "offer/"]):
+                                job_url = href
+                                break
+                        
+                        # Method 2: If no job-specific links found, try links with titles or header elements
+                        if not job_url:
+                            for link in all_links:
+                                # Check if the link contains a header element
+                                if link.find(["h1", "h2", "h3", "h4"]) or link.get("title"):
+                                    job_url = link["href"]
                                     break
-                      
-                        if not link_container:
+                        
+                        # Method 3: Last resort - take the first link with a non-empty href
+                        if not job_url and all_links:
+                            job_url = all_links[0]["href"]
+                        
+                        # Skip if no link found or validate the URL
+                        if not job_url:
+                            logging.info("Skipping job - could not find any usable link")
                             continue
 
-                        # Find the actual link element
-                        link_element = link_container.find("a", href=True)
-                        if not link_element:
-                            continue
-                            
-                        job_url = link_element.get("href")
                         if not job_url.startswith("http"):
                             job_url = self.base_url + job_url
                         
