@@ -1,7 +1,6 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure Functions: https://aka.ms/python-webapps-actions
-
 name: Build and deploy Python project to Azure Function App - JobMiner
 
 on:
@@ -35,7 +34,14 @@ jobs:
           source venv/bin/activate
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          # Create Python packages directory
+          mkdir -p .python_packages/lib/site-packages
+          # Install dependencies directly to package directory
+          pip install -r requirements.txt -t ./.python_packages/lib/site-packages
+          # Install for build environment too
+          pip install -r requirements.txt
 
       # Optional: Add step to run tests here
 
@@ -80,4 +86,3 @@ jobs:
           app-name: 'JobMiner'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          
