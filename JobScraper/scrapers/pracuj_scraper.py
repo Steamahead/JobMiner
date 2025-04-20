@@ -365,7 +365,7 @@ class PracujScraper(BaseScraper):
         all_skills_dict = {}
         
         # Process multiple pages
-        max_pages = 5  # Adjust as needed
+        max_pages = 12  # Adjust as needed
         current_page = 1
         
         while current_page <= max_pages:
@@ -409,8 +409,18 @@ class PracujScraper(BaseScraper):
                         # Find the link to the job details
                         link_container = job_container.select_one("div.tiles_cobg3mp")
                         if not link_container:
+                            logging.info("Skipping job - could not find link container")
                             continue
-                            
+                            # Try alternative selectors
+                            all_divs = job_container.find_all("div")
+                            for div in all_divs:
+                                if div.find("a", href=True):
+                                    link_container = div
+                                    break
+                      
+                        if not link_container:
+                            continue
+
                         # Find the actual link element
                         link_element = link_container.find("a", href=True)
                         if not link_element:
