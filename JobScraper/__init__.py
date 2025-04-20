@@ -1,3 +1,9 @@
+import datetime
+import logging
+import os
+import azure.functions as func
+from .scraper import run_scraper
+
 def main(mytimer: func.TimerRequest) -> None:
     try:
         # Get current time
