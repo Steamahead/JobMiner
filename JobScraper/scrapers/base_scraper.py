@@ -2,7 +2,27 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Tuple, Set
 import logging
 import requests
-from bs4 import BeautifulSoup
+import sys
+import os
+
+# Try multiple paths to find BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    # Try to find packages in the Python packages directory
+    site_packages = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                               '.python_packages', 'lib', 'site-packages')
+    if os.path.exists(site_packages):
+        sys.path.append(site_packages)
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            # If bs4 still not found, try with the beautifulsoup4 package
+            try:
+                from beautifulsoup4 import BeautifulSoup
+            except ImportError:
+                # Last resort - raise a clear error
+                raise ImportError("BeautifulSoup cannot be imported. Please ensure bs4 is correctly installed.")
 
 class BaseScraper(ABC):
     """Base class for all job scrapers"""
