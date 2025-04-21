@@ -3,11 +3,11 @@ import re
 import random
 import time
 import os
+import tempfile
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Set
 import uuid
 
-from azure.storage.blob import BlobServiceClient
 from bs4 import BeautifulSoup
 from ..models import JobListing
 from .base_scraper import BaseScraper
@@ -101,58 +101,29 @@ class PracujScraper(BaseScraper):
         }
 
     def get_last_processed_page(self):
-        """Retrieve the last processed page from blob storage"""
+        """Retrieve the last processed page from a local file"""
         try:
-            # Connect to blob storage
-            connection_string = os.environ.get("AzureWebJobsStorage")
-            if not connection_string:
-                logging.warning("AzureWebJobsStorage connection string not found")
-                return 1
-                
-            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-            container_client = blob_service_client.get_container_client("scraper-checkpoints")
+            # Check if a checkpoint file exists in the temp directory
+            checkpoint_path = os.path.join(tempfile.gettempdir(), "pracuj_checkpoint.txt")
             
-            # Get the checkpoint blob
-            blob_client = container_client.get_blob_client("pracuj-checkpoint.txt")
-            
-            # Check if blob exists
-            if not blob_client.exists():
-                return 1
-            
-            # Read the checkpoint
-            download_stream = blob_client.download_blob()
-            checkpoint_data = download_stream.readall().decode("utf-8")
-            
-            # Parse the page number
-            return int(checkpoint_data.strip())
+            if os.path.exists(checkpoint_path):
+                with open(checkpoint_path, "r") as f:
+                    checkpoint_data = f.read().strip()
+                    return int(checkpoint_data)
+            return 1  # Default to page 1 if no checkpoint exists
         except Exception as e:
             logging.warning(f"Failed to retrieve checkpoint: {str(e)}")
-            return 1  # Default to page 1 if no checkpoint exists
+            return 1  # Default to page 1 if an error occurs
 
     def save_checkpoint(self, page_number):
-        """Save the current page as a checkpoint"""
+        """Save the current page as a checkpoint to a local file"""
         try:
-            # Connect to blob storage
-            connection_string = os.environ.get("AzureWebJobsStorage")
-            if not connection_string:
-                logging.warning("AzureWebJobsStorage connection string not found")
-                return
+            # Save checkpoint to a file in the temp directory
+            checkpoint_path = os.path.join(tempfile.gettempdir(), "pracuj_checkpoint.txt")
+            
+            with open(checkpoint_path, "w") as f:
+                f.write(str(page_number))
                 
-            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-            container_client = blob_service_client.get_container_client("scraper-checkpoints")
-            
-            # Ensure container exists
-            try:
-                container_client.create_container(exist_ok=True)
-            except Exception as e:
-                logging.warning(f"Error creating container: {str(e)}")
-            
-            # Get the checkpoint blob
-            blob_client = container_client.get_blob_client("pracuj-checkpoint.txt")
-            
-            # Write the checkpoint
-            blob_client.upload_blob(str(page_number), overwrite=True)
-            
             logging.info(f"Saved checkpoint for page {page_number}")
         except Exception as e:
             logging.error(f"Failed to save checkpoint: {str(e)}")
@@ -429,7 +400,7 @@ class PracujScraper(BaseScraper):
         last_processed_page = self.get_last_processed_page()
         current_page = last_processed_page
         
-        # Set a reasonable page limit per execution (2-3 pages per run to avoid timeout)
+        # Set a reasonable page limit per execution (3 pages per run to avoid timeout)
         max_pages_per_run = 3
         end_page = current_page + max_pages_per_run - 1
         
@@ -620,12 +591,12 @@ class PracujScraper(BaseScraper):
                 # Save checkpoint after successfully processing this page
                 self.save_checkpoint(current_page + 1)
                 
-                # Add random delay before fetching next page
+                # Add random delay before fetching next page - use shorter delays
                 if current_page < end_page:  # Only delay if not on the last page
                     page_delay = 3 + random.uniform(0, 3)
                     logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
                     time.sleep(page_delay)
-                                    
+                
                 # Move to next page
                 current_page += 1
                 
