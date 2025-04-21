@@ -430,7 +430,7 @@ class PracujScraper(BaseScraper):
         current_page = last_processed_page
         
         # Set a reasonable page limit per execution (2-3 pages per run to avoid timeout)
-        max_pages_per_run = 2
+        max_pages_per_run = 3
         end_page = current_page + max_pages_per_run - 1
         
         # Cap the overall number of pages we'll ever process
@@ -622,10 +622,10 @@ class PracujScraper(BaseScraper):
                 
                 # Add random delay before fetching next page
                 if current_page < end_page:  # Only delay if not on the last page
-                    page_delay = 5 + random.uniform(2, 8)
+                    page_delay = 3 + random.uniform(0, 3)
                     logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
                     time.sleep(page_delay)
-                
+                                    
                 # Move to next page
                 current_page += 1
                 
