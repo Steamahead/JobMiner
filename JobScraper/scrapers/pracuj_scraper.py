@@ -593,7 +593,7 @@ class PracujScraper(BaseScraper):
                 
                 # Add random delay before fetching next page - use shorter delays
                 if current_page < end_page:  # Only delay if not on the last page
-                    page_delay = 3 + random.uniform(0, 3)
+                    page_delay = 2 + random.uniform(0, 2)
                     logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
                     time.sleep(page_delay)
                 
