@@ -37,15 +37,16 @@ class BaseScraper(ABC):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
     
-    def get_page_html(self, url: str, max_retries=3, base_delay=5) -> str:
+    def get_page_html(self, url: str, max_retries=3, base_delay=3) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
         retries = 0
         while retries < max_retries:
             try:
                 # Add a random delay between requests (between base_delay and base_delay*2 seconds)
-                delay = base_delay + random.uniform(0, base_delay)
+
+                delay = base_delay + random.uniform(0, 2)
                 time.sleep(delay)
-                
+                            
                 response = requests.get(url, headers=self.headers, timeout=30)
                 
                 # If we hit a rate limit, wait longer and retry
