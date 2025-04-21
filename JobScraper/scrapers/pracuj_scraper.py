@@ -606,7 +606,7 @@ class PracujScraper(BaseScraper):
                         # Generate a unique job ID 
                         job_id = str(uuid.uuid4())
                         
-                        # Create job listing object (without description field)
+                        # Create job listing object (including an empty description field)
                         job = JobListing(
                             job_id=job_id,
                             source="pracuj.pl",
@@ -621,6 +621,7 @@ class PracujScraper(BaseScraper):
                             experience_level=badge_info['experience_level'],
                             employment_type=badge_info['employment_type'],
                             years_of_experience=years_of_experience,
+                            description="",  # Add empty description
                             scrape_date=datetime.now(),
                             listing_status="Active"
                         )
