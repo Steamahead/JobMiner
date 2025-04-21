@@ -532,6 +532,11 @@ class PracujScraper(BaseScraper):
                 
                 logging.info(f"Processed {len(page_job_listings)} jobs with {errors} errors on page {current_page}")
                 
+                # Add random delay before fetching next page
+                page_delay = 5 + random.uniform(2, 8)
+                logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
+                time.sleep(page_delay)
+
                 # Move to next page
                 current_page += 1
                 
