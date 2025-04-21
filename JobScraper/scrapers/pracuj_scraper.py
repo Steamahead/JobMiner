@@ -14,7 +14,7 @@ class PracujScraper(BaseScraper):
     def __init__(self):
         super().__init__()
         self.base_url = "https://www.pracuj.pl"
-        self.search_url = "https://it.pracuj.pl/praca/warszawa;wp?rd=30&et=17%2C4%2C3&its=business-analytics%2Cbig-data-science"
+        self.search_url = "https://it.pracuj.pl/praca/warszawa;wp?rd=30&et=3%2C17%2C4&its=big-data-science"
         # Define skill categories
         self.skill_categories = {
             "Database": [
