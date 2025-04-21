@@ -1,9 +1,13 @@
 import logging
 import re
+import random
+import time
+import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Set
 import uuid
 
+from azure.storage.blob import BlobServiceClient
 from bs4 import BeautifulSoup
 from ..models import JobListing
 from .base_scraper import BaseScraper
@@ -95,6 +99,63 @@ class PracujScraper(BaseScraper):
                 "sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday"
             ]
         }
+
+    def get_last_processed_page(self):
+        """Retrieve the last processed page from blob storage"""
+        try:
+            # Connect to blob storage
+            connection_string = os.environ.get("AzureWebJobsStorage")
+            if not connection_string:
+                logging.warning("AzureWebJobsStorage connection string not found")
+                return 1
+                
+            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+            container_client = blob_service_client.get_container_client("scraper-checkpoints")
+            
+            # Get the checkpoint blob
+            blob_client = container_client.get_blob_client("pracuj-checkpoint.txt")
+            
+            # Check if blob exists
+            if not blob_client.exists():
+                return 1
+            
+            # Read the checkpoint
+            download_stream = blob_client.download_blob()
+            checkpoint_data = download_stream.readall().decode("utf-8")
+            
+            # Parse the page number
+            return int(checkpoint_data.strip())
+        except Exception as e:
+            logging.warning(f"Failed to retrieve checkpoint: {str(e)}")
+            return 1  # Default to page 1 if no checkpoint exists
+
+    def save_checkpoint(self, page_number):
+        """Save the current page as a checkpoint"""
+        try:
+            # Connect to blob storage
+            connection_string = os.environ.get("AzureWebJobsStorage")
+            if not connection_string:
+                logging.warning("AzureWebJobsStorage connection string not found")
+                return
+                
+            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+            container_client = blob_service_client.get_container_client("scraper-checkpoints")
+            
+            # Ensure container exists
+            try:
+                container_client.create_container(exist_ok=True)
+            except Exception as e:
+                logging.warning(f"Error creating container: {str(e)}")
+            
+            # Get the checkpoint blob
+            blob_client = container_client.get_blob_client("pracuj-checkpoint.txt")
+            
+            # Write the checkpoint
+            blob_client.upload_blob(str(page_number), overwrite=True)
+            
+            logging.info(f"Saved checkpoint for page {page_number}")
+        except Exception as e:
+            logging.error(f"Failed to save checkpoint: {str(e)}")
     
     def _extract_salary(self, salary_text: str) -> Tuple[Optional[int], Optional[int]]:
         """Extract min and max salary from salary text"""
@@ -359,17 +420,31 @@ class PracujScraper(BaseScraper):
         return None
         
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
-        """Scrape job listings from pracuj.pl"""
+        """Scrape job listings from pracuj.pl with checkpoint system and URL deduplication"""
         # Initialize lists to store all results
         all_job_listings = []
         all_skills_dict = {}
         
-        # Process multiple pages
-        max_pages = 12  # Adjust as needed
-        current_page = 1
+        # Get last processed page from storage
+        last_processed_page = self.get_last_processed_page()
+        current_page = last_processed_page
         
-        while current_page <= max_pages:
-            logging.info(f"Processing page {current_page} of {max_pages}")
+        # Set a reasonable page limit per execution (2-3 pages per run to avoid timeout)
+        max_pages_per_run = 2
+        end_page = current_page + max_pages_per_run - 1
+        
+        # Cap the overall number of pages we'll ever process
+        absolute_max_pages = 12
+        if end_page > absolute_max_pages:
+            end_page = absolute_max_pages
+        
+        # Track processed URLs to prevent duplicates
+        processed_urls = set()
+        
+        logging.info(f"Starting scrape from page {current_page} to {end_page} (of max {absolute_max_pages})")
+        
+        while current_page <= end_page:
+            logging.info(f"Processing page {current_page} of {end_page}")
             # Modify URL for pagination
             page_url = f"{self.search_url}" if current_page == 1 else f"{self.search_url}&pn={current_page}"
             
@@ -379,6 +454,8 @@ class PracujScraper(BaseScraper):
                 html = self.get_page_html(page_url)
                 if not html:
                     logging.error(f"Failed to fetch search results page {current_page}")
+                    # Save checkpoint to next page so we don't retry forever
+                    self.save_checkpoint(current_page + 1)
                     current_page += 1
                     continue
                     
@@ -406,6 +483,8 @@ class PracujScraper(BaseScraper):
                 # If no jobs found on this page, stop pagination
                 if not job_containers:
                     logging.info(f"No jobs found on page {current_page}. Stopping pagination.")
+                    # Save checkpoint to next page so we don't retry this page
+                    self.save_checkpoint(current_page + 1)
                     break
                 
                 # Process jobs from this page
@@ -415,7 +494,6 @@ class PracujScraper(BaseScraper):
                 
                 for job_container in job_containers:
                     try:
-
                         # Find the job URL - try multiple approaches
                         job_url = None
                         
@@ -446,6 +524,13 @@ class PracujScraper(BaseScraper):
 
                         if not job_url.startswith("http"):
                             job_url = self.base_url + job_url
+                            
+                        # Skip if we've already processed this URL
+                        if job_url in processed_urls:
+                            logging.info(f"Skipping duplicate job URL: {job_url}")
+                            continue
+                            
+                        processed_urls.add(job_url)
                         
                         logging.info(f"Processing job: {job_url}")
                         
@@ -532,11 +617,15 @@ class PracujScraper(BaseScraper):
                 
                 logging.info(f"Processed {len(page_job_listings)} jobs with {errors} errors on page {current_page}")
                 
+                # Save checkpoint after successfully processing this page
+                self.save_checkpoint(current_page + 1)
+                
                 # Add random delay before fetching next page
-                page_delay = 5 + random.uniform(2, 8)
-                logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
-                time.sleep(page_delay)
-
+                if current_page < end_page:  # Only delay if not on the last page
+                    page_delay = 5 + random.uniform(2, 8)
+                    logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
+                    time.sleep(page_delay)
+                
                 # Move to next page
                 current_page += 1
                 
@@ -544,9 +633,13 @@ class PracujScraper(BaseScraper):
                 logging.error(f"Error processing page {current_page}: {str(e)}")
                 import traceback
                 logging.error(traceback.format_exc())
+                
+                # Save checkpoint to the next page even if there was an error
+                self.save_checkpoint(current_page + 1)
                 current_page += 1
         
-        logging.info(f"Total jobs collected: {len(all_job_listings)}")
+        logging.info(f"Total jobs collected in this run: {len(all_job_listings)}")
+        logging.info(f"Unique job URLs processed: {len(processed_urls)}")
         return all_job_listings, all_skills_dict 
   
 def scrape_pracuj():
