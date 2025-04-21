@@ -44,7 +44,7 @@ class BaseScraper(ABC):
             try:
                 # Add a random delay between requests (between base_delay and base_delay*2 seconds)
 
-                delay = base_delay + random.uniform(0, 2)
+                delay = base_delay + random.uniform(0, 1.5)
                 time.sleep(delay)
                             
                 response = requests.get(url, headers=self.headers, timeout=30)
