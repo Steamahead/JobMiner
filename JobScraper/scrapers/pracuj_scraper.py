@@ -401,7 +401,7 @@ class PracujScraper(BaseScraper):
         current_page = last_processed_page
         
         # Set a reasonable page limit per execution (3 pages per run to avoid timeout)
-        max_pages_per_run = 3
+        max_pages_per_run = 2
         end_page = current_page + max_pages_per_run - 1
         
         # Cap the overall number of pages we'll ever process
