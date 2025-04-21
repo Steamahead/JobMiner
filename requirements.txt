@@ -6,3 +6,4 @@ pymssql==2.2.7
 azure-functions>=1.12.0
 azure-identity==1.13.0
 python-dateutil==2.8.2
+azure-storage-blob>=12.0.0
