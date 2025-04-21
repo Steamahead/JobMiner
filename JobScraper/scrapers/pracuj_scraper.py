@@ -129,36 +129,62 @@ class PracujScraper(BaseScraper):
             logging.error(f"Failed to save checkpoint: {str(e)}")
     
     def _extract_salary(self, salary_text: str) -> Tuple[Optional[int], Optional[int]]:
-        """Extract min and max salary from salary text"""
+        """Extract min and max salary from salary text, handling hourly rates"""
         if not salary_text:
             return None, None
-            
+        
         # Remove non-breaking spaces and other characters
         clean_text = salary_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
         
-        # Look for patterns like "12000–20000"
-        match = re.search(r'(\d+)[–-](\d+)', clean_text)
+        # Check if it contains hourly rate indicators
+        is_hourly = 'zł/h' in clean_text or 'zł/godz' in clean_text
+        
+        # Remove currency and other non-numeric characters
+        clean_text = re.sub(r'[^\d,\.\-–]', '', clean_text)
+        
+        # Look for patterns like "12000–20000" or "150,00-180,00"
+        match = re.search(r'([\d\.,]+)[–\-]([\d\.,]+)', clean_text)
         if match:
             try:
-                min_salary = int(match.group(1))
-                max_salary = int(match.group(2))
-                return min_salary, max_salary
+                # Handle both formats: "9000" and "150,00"
+                min_val = match.group(1).replace(',', '.')
+                max_val = match.group(2).replace(',', '.')
+                
+                # Convert to float first to handle decimal points
+                min_salary = float(min_val)
+                max_salary = float(max_val)
+                
+                # For hourly rates, convert to monthly (assuming 160 hours/month)
+                if is_hourly:
+                    min_salary = min_salary * 160
+                    max_salary = max_salary * 160
+                
+                # Convert to integers for database storage
+                return int(min_salary), int(max_salary)
             except ValueError:
                 pass
                 
         # Look for single value like "12000"
-        match = re.search(r'(\d+)', clean_text)
+        match = re.search(r'([\d\.,]+)', clean_text)
         if match:
             try:
-                salary = int(match.group(1))
-                return salary, salary
+                # Handle both formats
+                val = match.group(1).replace(',', '.')
+                salary = float(val)
+                
+                # For hourly rates, convert to monthly
+                if is_hourly:
+                    salary = salary * 160
+                
+                # Convert to integer
+                return int(salary), int(salary)
             except ValueError:
                 pass
                 
         return None, None
     
     def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, str]:
-        """Extract information from badge elements that all use the same selector"""
+        """Extract information from badge elements using updated selectors"""
         result = {
             'location': '',
             'operating_mode': '',
@@ -167,24 +193,37 @@ class PracujScraper(BaseScraper):
             'employment_type': ''
         }
         
-        # Get all badge elements
-        badges = soup.find_all('div', attrs={'data-test': 'offer-badge-title'})
+        # Get operating mode (work modes) - NEW SELECTOR
+        operating_mode_elem = soup.find("li", attrs={"data-scroll-id": "work-modes", "class": "lowercase c196gesj"})
+        if operating_mode_elem:
+            result['operating_mode'] = operating_mode_elem.get_text(strip=True)
         
-        for badge in badges:
-            text = badge.text.strip()
-            
-            # Categorize based on content
+        # Get work type (work schedules) - NEW SELECTOR
+        work_type_elem = soup.find("li", attrs={"data-test": "sections-benefit-work-schedule", 
+                                            "data-scroll-id": "work-schedules"})
+        if work_type_elem:
+            result['work_type'] = work_type_elem.get_text(strip=True)
+        
+        # Get experience level - NEW SELECTOR
+        experience_level_elem = soup.find("li", attrs={"data-test": "sections-benefit-employment-type-name", 
+                                                    "data-scroll-id": "position-levels"})
+        if experience_level_elem:
+            result['experience_level'] = experience_level_elem.get_text(strip=True)
+        
+        # Get employment type - NEW SELECTOR
+        employment_type_elem = soup.find("li", attrs={"data-test": "sections-benefit-contracts", 
+                                                    "data-scroll-id": "contract-types"})
+        if employment_type_elem:
+            result['employment_type'] = employment_type_elem.get_text(strip=True)
+        
+        # Get location - using the old method as fallback
+        location_elems = soup.find_all('div', attrs={'data-test': 'offer-badge-title'})
+        for location_elem in location_elems:
+            text = location_elem.text.strip()
             if any(x in text.lower() for x in ['warszawa', 'kraków', 'wrocław', 'gdańsk', 'poznań']):
                 result['location'] = text
-            elif any(x in text.lower() for x in ['stacjonarna', 'zdalna', 'hybrydowa']):
-                result['operating_mode'] = text
-            elif any(x in text.lower() for x in ['pełny etat', 'część etatu']):
-                result['work_type'] = text
-            elif any(x in text.lower() for x in ['specjalista', 'młodszy', 'asystent', 'junior', 'mid', 'senior']):
-                result['experience_level'] = text
-            elif any(x in text.lower() for x in ['umowa o pracę', 'kontrakt b2b', 'umowa zlecenie', 'umowa o dzieło', 'umowa o pracę tymczasową']):
-                result['employment_type'] = text
-                
+                break
+        
         return result
     
     def _extract_skills_from_listing(self, soup: BeautifulSoup) -> List[str]:
@@ -360,33 +399,49 @@ class PracujScraper(BaseScraper):
         return mapped_skills
 
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
-        """Try to extract years of experience from the description bullets"""
-        description_section = soup.find("ul", attrs={"data-test": "aggregate-bullet-model"})
-        if not description_section:
+        """Improved extraction of years of experience from requirements section"""
+        # Try to find the requirements section
+        requirements_section = soup.find("div", attrs={"data-test": "offer-sub-section", 
+                                                      "data-scroll-id": "requirements-expected-1"})
+        if not requirements_section:
             return None
+        
+        # Get the full text from the section
+        requirements_text = requirements_section.get_text(strip=True).lower()
+        
+        # Look for experience patterns in both Polish and English
+        patterns = [
+            # Polish patterns
+            r'(\d+)\s*rok\w*\s*doświadczeni',
+            r'(\d+)\s*lat\w*\s*doświadczeni',
+            r'doświadczeni\w*\s*(\d+)\s*rok',
+            r'doświadczeni\w*\s*(\d+)\s*lat',
+            r'doświadczeni\w*\s*min[.:]?\s*(\d+)\s*rok',
+            r'doświadczeni\w*\s*min[.:]?\s*(\d+)\s*lat',
+            r'min[.:]?\s*(\d+)\s*rok\w*\s*doświadczeni',
+            r'min[.:]?\s*(\d+)\s*lat\w*\s*doświadczeni',
+            r'(\d+)\+\s*rok\w*\s*doświadczeni',
+            r'(\d+)\+\s*lat\w*\s*doświadczeni',
+            r'(\d+)[-+](\d+)\s*lat\w*\s*doświadczeni',
+            r'(\d+)[-+](\d+)\s*rok\w*\s*doświadczeni',
             
-        bullet_items = description_section.find_all("li", class_="tkzmjn3")
-        for item in bullet_items:
-            text = item.get_text(strip=True).lower()
-            
-            # Look for patterns like "X lat doświadczenia" or "doświadczenie: X lat"
-            patterns = [
-                r'(\d+)\s*lat\w*\s*doświadczeni',
-                r'doświadczeni\w*\s*(\d+)\s*lat',
-                r'doświadczeni\w*\s*min[.:]?\s*(\d+)\s*lat',
-                r'min[.:]?\s*(\d+)\s*lat\w*\s*doświadczeni',
-                r'(\d+)\+\s*lat\w*\s*doświadczeni',
-                r'(\d+)[-+](\d+)\s*lat\w*\s*doświadczeni'
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, text)
-                if match:
-                    try:
-                        # If range like "3-5 years", take the minimum
-                        return int(match.group(1))
-                    except (ValueError, IndexError):
-                        pass
+            # English patterns
+            r'(\d+)\s*year\w*\s*experience',
+            r'experience\s*of\s*(\d+)\s*year',
+            r'min[.:]?\s*(\d+)\s*year\w*\s*experience',
+            r'experience\s*min[.:]?\s*(\d+)\s*year',
+            r'(\d+)\+\s*year\w*\s*experience',
+            r'(\d+)[-+](\d+)\s*year\w*\s*experience'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, requirements_text)
+            if match:
+                try:
+                    # If range like "3-5 years", take the minimum
+                    return int(match.group(1))
+                except (ValueError, IndexError):
+                    pass
         
         return None
         
@@ -395,12 +450,14 @@ class PracujScraper(BaseScraper):
         # Initialize lists to store all results
         all_job_listings = []
         all_skills_dict = {}
+        successful_db_inserts = 0
         
         # Get last processed page from storage
         last_processed_page = self.get_last_processed_page()
-        current_page = last_processed_page
+        starting_page = last_processed_page
+        current_page = starting_page
         
-        # Set a reasonable page limit per execution (3 pages per run to avoid timeout)
+        # Set a reasonable page limit per execution (2 pages per run to avoid timeout)
         max_pages_per_run = 2
         end_page = current_page + max_pages_per_run - 1
         
@@ -526,6 +583,11 @@ class PracujScraper(BaseScraper):
                             company = company_element.text.strip()
                         else:
                             company = "Unknown Company"
+                            
+                        # Skip company ads without title/name
+                        if job_title == "Unknown Title" and company == "Unknown Company":
+                            logging.info(f"Skipping company ad URL: {job_url}")
+                            continue
                         
                         # Extract salary if available
                         salary_element = detail_soup.find("div", attrs={"data-test": "text-earningAmount"})
@@ -534,14 +596,6 @@ class PracujScraper(BaseScraper):
                         
                         # Extract all badge information
                         badge_info = self._extract_badge_info(detail_soup)
-                        
-                        # Extract full description
-                        description_elements = detail_soup.find_all("div", class_=lambda c: c and "offer_" in c)
-                        description_texts = []
-                        for elem in description_elements:
-                            if elem.get_text(strip=True):
-                                description_texts.append(elem.get_text(strip=True))
-                        description = "\n".join(description_texts)
                         
                         # Extract years of experience
                         years_of_experience = self._extract_years_of_experience(detail_soup)
@@ -552,7 +606,7 @@ class PracujScraper(BaseScraper):
                         # Generate a unique job ID 
                         job_id = str(uuid.uuid4())
                         
-                        # Create job listing object
+                        # Create job listing object (without description field)
                         job = JobListing(
                             job_id=job_id,
                             source="pracuj.pl",
@@ -567,10 +621,18 @@ class PracujScraper(BaseScraper):
                             experience_level=badge_info['experience_level'],
                             employment_type=badge_info['employment_type'],
                             years_of_experience=years_of_experience,
-                            description=description,
                             scrape_date=datetime.now(),
                             listing_status="Active"
                         )
+                        
+                        # Insert the job into the database
+                        from ..database import insert_into_db  # Import your existing database insertion function
+                        db_result = insert_into_db(job)
+                        if db_result:
+                            logging.info(f"✅ Successfully inserted job: {job_title} into database with ID: {db_result}")
+                            successful_db_inserts += 1
+                        else:
+                            logging.error(f"❌ Failed to insert job: {job_title} into database")
                         
                         page_job_listings.append(job)
                         page_skills_dict[job_id] = extracted_skills
@@ -609,8 +671,11 @@ class PracujScraper(BaseScraper):
                 self.save_checkpoint(current_page + 1)
                 current_page += 1
         
-        logging.info(f"Total jobs collected in this run: {len(all_job_listings)}")
-        logging.info(f"Unique job URLs processed: {len(processed_urls)}")
+        # Final summary logs
+        logging.info(f"Scrape summary: Processed {len(all_job_listings)} jobs across {current_page - starting_page} pages")
+        logging.info(f"Next run will start from page {current_page}")
+        logging.info(f"Jobs successfully inserted in database: {successful_db_inserts}")
+        
         return all_job_listings, all_skills_dict 
   
 def scrape_pracuj():
