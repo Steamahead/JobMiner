@@ -4,6 +4,9 @@ import logging
 import requests
 import sys
 import os
+import time
+import random
+from requests.exceptions import RequestException
 
 # Try multiple paths to find BeautifulSoup
 try:
@@ -34,16 +37,37 @@ class BaseScraper(ABC):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
     
-    def get_page_html(self, url: str) -> str:
-        """Get HTML content from a URL"""
-        try:
-            response = requests.get(url, headers=self.headers, timeout=30)
-            response.raise_for_status()
-            return response.text
-        except Exception as e:
-            logging.error(f"Error fetching URL {url}: {str(e)}")
-            return ""
-            
+    def get_page_html(self, url: str, max_retries=3, base_delay=5) -> str:
+        """Get HTML content from a URL with retry logic and random delays"""
+        retries = 0
+        while retries < max_retries:
+            try:
+                # Add a random delay between requests (between base_delay and base_delay*2 seconds)
+                delay = base_delay + random.uniform(0, base_delay)
+                time.sleep(delay)
+                
+                response = requests.get(url, headers=self.headers, timeout=30)
+                
+                # If we hit a rate limit, wait longer and retry
+                if response.status_code == 429:
+                    retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
+                    logging.warning(f"Rate limited, waiting {retry_delay:.2f} seconds before retry {retries+1}/{max_retries}")
+                    time.sleep(retry_delay)
+                    retries += 1
+                    continue
+                    
+                response.raise_for_status()
+                return response.text
+                
+            except Exception as e:
+                retries += 1
+                retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
+                logging.error(f"Error fetching URL {url}: {str(e)}")
+                logging.info(f"Retrying in {retry_delay:.2f} seconds (attempt {retries}/{max_retries})")
+                time.sleep(retry_delay)
+        
+        return ""  # Return empty string if all retries fail
+           
     @abstractmethod
     def scrape(self) -> Tuple[List, Dict]:
         """
