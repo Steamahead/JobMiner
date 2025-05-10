@@ -1,3 +1,4 @@
+from ..database import insert_job_listing
 import logging
 import re
 import random
