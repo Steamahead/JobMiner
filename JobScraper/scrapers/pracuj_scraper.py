@@ -627,17 +627,17 @@ class PracujScraper(BaseScraper):
                         )
                         
                         # Insert the job into the database
-                        from ..database import insert_into_db  # Import your existing database insertion function
-                        db_result = insert_into_db(job)
-                        if db_result:
-                            logging.info(f"✅ Successfully inserted job: {job_title} into database with ID: {db_result}")
+                        
+                        job_db_id = insert_job_listing(job)
+                        if job_db_id:
+                            logging.info(f"✅ Successfully inserted job: {job_title} into database with ID: {job_db_id}")
                             successful_db_inserts += 1
                         else:
                             logging.error(f"❌ Failed to insert job: {job_title} into database")
-                        
+
                         page_job_listings.append(job)
                         page_skills_dict[job_id] = extracted_skills
-                        
+                      
                     except Exception as e:
                         errors += 1
                         logging.error(f"Error processing job element: {str(e)}")
