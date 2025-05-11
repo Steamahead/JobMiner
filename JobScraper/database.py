@@ -207,12 +207,13 @@ def insert_skill(skill: Skill) -> bool:
         # Insert new skill
         insert_query = """
         INSERT INTO Skills (
-            JobID, Source, SkillName, SkillCategory
+            JobID, ShortID, Source, SkillName, SkillCategory
         ) VALUES (%s, %s, %s, %s)
         """
         
         params = (
             skill.job_id,
+            skill.short_id,
             skill.source,
             skill.skill_name,
             skill.skill_category
