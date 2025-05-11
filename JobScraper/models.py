@@ -21,6 +21,7 @@ class JobListing:
     description: str             # Full job description
     scrape_date: datetime        # When this listing was scraped
     listing_status: str          # Active/Expired
+    short_id: Optional[int] = None
 
 @dataclass
 class Skill:
@@ -29,3 +30,4 @@ class Skill:
     source: str                  # Which job board (e.g., "pracuj.pl")
     skill_name: str              # Name of the skill (SQL, Power BI, etc.)
     skill_category: str          # Category (Database, Visualization, etc.)
+    short_id: Optional[int] = None
