@@ -1,15 +1,10 @@
-from ..database import insert_job_listing
-import logging
-import re
-import random
-import time
-import os
-import tempfile
-from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Set
-import uuid
-
-from bs4 import BeautifulSoup
+from ..models   import JobListing, Skill
+from ..database import insert_job_listing, insert_skill
+from .base_scraper import BaseScraper
+import logging, re, random, time, os, tempfile, uuid
+from datetime    import datetime
+from typing      import Dict, List, Tuple, Optional, Set
+from bs4         import BeautifulSoup
 from ..models import JobListing
 from .base_scraper import BaseScraper
 
