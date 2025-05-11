@@ -103,7 +103,45 @@ def create_tables_if_not_exist():
     finally:
         if connection:
             connection.close()
+def insert_job_listing(job: JobListing) -> Optional[int]:
+    """Insert a job listing into the database and return its ID"""
+    conn = get_sql_connection()
+    if not conn:
+        logging.error(f"DB connect failed for job {job.title}")
+        return None
+    cur = conn.cursor()
 
+    # check for existing
+    cur.execute(
+        "SELECT ID FROM JobListings WHERE JobID=%s AND Source=%s",
+        (job.job_id, job.source)
+    )
+    row = cur.fetchone()
+    if row:
+        job.short_id = row[0]
+        return row[0]
+
+    # insert new
+    cur.execute("""
+        INSERT INTO JobListings (
+            JobID, Source, Title, Company, Link,
+            SalaryMin, SalaryMax, Location,
+            OperatingMode, WorkType, ExperienceLevel, EmploymentType,
+            YearsOfExperience, Description, ScrapeDate, ListingStatus
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+        SELECT SCOPE_IDENTITY();
+    """, (
+        job.job_id, job.source, job.title, job.company, job.link,
+        job.salary_min, job.salary_max, job.location,
+        job.operating_mode, job.work_type, job.experience_level, job.employment_type,
+        job.years_of_experience, job.description, job.scrape_date, job.listing_status
+    ))
+    new_id = int(cur.fetchone()[0])
+    conn.commit()
+    job.short_id = new_id
+    cur.close()
+    conn.close()
+    return new_id
 def insert_skill(skill: Skill) -> bool:
     """Insert a skill into the database"""
     connection = None
