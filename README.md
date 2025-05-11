@@ -1,6 +1,6 @@
 JobMiner is an automated Azure-based application that scrapes data analyst job listings from popular job portals, extracts detailed information including skills, salary ranges, and experience requirements, and stores the structured data in a SQL database. This data is later visualized in Power BI dashboards to help identify in-demand skills and career transition paths.
 
-🚀 Features
+Features
 
 Automated Data Collection: Daily scheduled scraping of data analyst job listings
 Multi-Source Support: Currently implemented for pracuj.pl, with architecture to add more sources
@@ -18,7 +18,7 @@ Deduplication: Prevents storing duplicate job listings
 Resilience: Checkpoint system for handling interruptions and rate limiting
 Structured Storage: All data saved in well-designed SQL tables for easy querying
 
-🛠️ Architecture
+Architecture
 JobMiner is built as an Azure Function App with a timer trigger that runs daily. The application:
 
 Connects to job boards and searches for data analyst positions
@@ -28,7 +28,7 @@ Identifies technical skills using pattern matching
 Stores data in Azure SQL Database
 Provides Power BI integration for visualization
 
-📊 Database Schema
+Database Schema
 The application uses two main tables:
 JobListings Table
 Stores core information about each job posting:
@@ -51,7 +51,7 @@ Source (job board name)
 SkillName (standardized skill name)
 SkillCategory (Database, Programming, Visualization, etc.)
 
-🔧 Technical Stack
+Technical Stack
 
 Language: Python 3.11
 Web Scraping: BeautifulSoup4, Requests
@@ -60,7 +60,7 @@ Hosting: Azure Functions
 CI/CD: GitHub Actions
 Visualization: Power BI
 
-🚀 Deployment
+Deployment
 The application is deployed using GitHub Actions with a CI/CD pipeline that:
 
 Builds the Python application
@@ -68,14 +68,14 @@ Creates the necessary Python package structure
 Uploads the package as an artifact
 Deploys to Azure Functions
 
-🔄 Scraper Design
+Scraper Design
 JobMiner uses a modular scraper design:
 
 BaseScraper: Abstract base class with common scraping functionality
 Source-specific scrapers (like PracujScraper): Handle the specifics of each job board
 Skill extraction system with standardized categories and variations
 
-📋 Skills Categories
+Skills Categories
 The system identifies and categorizes skills across multiple domains:
 
 Database: SQL, MySQL, PostgreSQL, etc.
@@ -87,7 +87,7 @@ Analytics & Statistics: Regression, Forecasting, etc.
 Cloud: AWS, Azure, GCP, etc.
 And many more categories
 
-📊 Sample Visualizations
+Sample Visualizations
 The Power BI dashboard includes visualizations such as:
 
 Most in-demand skills for data analyst positions
@@ -95,5 +95,5 @@ Salary ranges by experience level
 Job distribution by work mode
 Top companies hiring data analysts
 
-📄 License
+License
 This project is licensed under the MIT License - see the LICENSE file for details.
