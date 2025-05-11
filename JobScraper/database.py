@@ -80,6 +80,7 @@ def create_tables_if_not_exist():
             CREATE TABLE Skills (
                 ID INT IDENTITY(1,1) PRIMARY KEY,
                 JobID NVARCHAR(100) NOT NULL,
+                ShortID INT NOT NULL,
                 Source NVARCHAR(50) NOT NULL,
                 SkillName NVARCHAR(100) NOT NULL,
                 SkillCategory NVARCHAR(50) NOT NULL,
