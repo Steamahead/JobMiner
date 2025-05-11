@@ -27,9 +27,9 @@ def process_skills(job_listing: JobListing, skills_list: List[str], skill_catego
             job_id=job_listing.job_id,
             source=job_listing.source,
             skill_name=skill_name,
-            skill_category=category
+            skill_category=category,
+            short_id=job.short_id 
         )
-        
         insert_skill(skill)
     
 def run_scraper():
