@@ -161,6 +161,10 @@ def insert_job_listing(job: JobListing) -> int:
         job_db_id = cursor.fetchone()[0]
         connection.commit()
         logging.info(f"Inserted job: {job.title} with database ID: {job_db_id}")
+
+        # ← Here’s the new line:
+        job.short_id = int(job_db_id)
+
         return job_db_id
         
     except Exception as e:
