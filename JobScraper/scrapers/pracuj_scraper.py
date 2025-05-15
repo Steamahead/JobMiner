@@ -453,15 +453,10 @@ class PracujScraper(BaseScraper):
         starting_page = last_processed_page
         current_page = starting_page
         
-        # Set a reasonable page limit per execution (2 pages per run to avoid timeout)
-        max_pages_per_run = 2
-        end_page = current_page + max_pages_per_run - 1
-        
-        # Cap the overall number of pages we'll ever process
-        absolute_max_pages = 12
-        if end_page > absolute_max_pages:
-            end_page = absolute_max_pages
-        
+        # We’ll keep fetching pages until we hit one with no listings
+        absolute_max_pages = 9999  # or drop entirely if you prefer
+        end_page = absolute_max_pages
+                
         # Track processed URLs to prevent duplicates
         processed_urls = set()
         
