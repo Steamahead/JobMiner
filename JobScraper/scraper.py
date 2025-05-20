@@ -13,22 +13,21 @@ from .scrapers.pracuj_scraper import scrape_pracuj
 # from .scrapers.nofluffjobs_scraper import scrape_nofluffjobs
 
 def process_skills(job_listing: JobListing, skills_list: List[str], skill_categories: dict) -> None:
-    """Process and save skills for a job listing"""
     for skill_name in skills_list:
-        # Determine skill category based on predefined mapping
+        # Determine skill category...
         category = "Other"
         for cat, skills in skill_categories.items():
             if skill_name.lower() in skills:
                 category = cat
                 break
-                
-        # Create and save skill
+
+        # Create and save skill, using the same short_id we got back from insert_job_listing()
         skill = Skill(
             job_id=job_listing.job_id,
             source=job_listing.source,
             skill_name=skill_name,
             skill_category=category,
-            short_id=job.short_id 
+            short_id=job_listing.short_id
         )
         insert_skill(skill)
     
