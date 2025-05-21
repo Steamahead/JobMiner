@@ -461,6 +461,7 @@ class PracujScraper(BaseScraper):
         processed_urls = set()
         
         logging.info(f"Starting scrape from page {current_page} to {end_page} (of max {absolute_max_pages})")
+               
         
         while current_page <= end_page:
             logging.info(f"Processing page {current_page} of {end_page}")
@@ -628,7 +629,15 @@ class PracujScraper(BaseScraper):
 
                         page_job_listings.append(job)
                         page_skills_dict[job_id] = extracted_skills
-                      
+                        job_db_id = insert_job_listing(job)
+                        if job.short_id:  # only “new” insertions get a short_id set
+                            logging.info(f"✅ Inserted new job: {job_title} as ID {job_db_id}")
+                            successful_db_inserts += 1
+                            page_job_listings.append(job)
+                            page_skills_dict[job_id] = extracted_skills
+                        else:
+                            logging.info(f"🔄 Job already existed, skipping append: {job_title}")
+
                     except Exception as e:
                         errors += 1
                         logging.error(f"Error processing job element: {str(e)}")
