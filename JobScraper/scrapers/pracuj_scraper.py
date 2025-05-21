@@ -442,27 +442,31 @@ class PracujScraper(BaseScraper):
         return None
         
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
-        """Scrape job listings from pracuj.pl with checkpoint system and URL deduplication"""
         # Initialize lists to store all results
-        all_job_listings = []
-        all_skills_dict = {}
+        all_job_listings     = []
+        all_skills_dict      = {}
         successful_db_inserts = 0
-        
-        # Get last processed page from storage
+    
+        # 1) Resume from last saved page
         last_processed_page = self.get_last_processed_page()
-        starting_page = last_processed_page
-        current_page = starting_page
-        
-        # We’ll keep fetching pages until we hit one with no listings
-        absolute_max_pages = 9999  # or drop entirely if you prefer
-        end_page = absolute_max_pages
-                
+        current_page        = last_processed_page
+    
+        # 2) Auto-detect how many pages exist right now
+        first_html   = self.get_page_html(self.search_url)
+        first_soup   = BeautifulSoup(first_html, "html.parser")
+        page_links   = first_soup.select("ul.pagination__list a")
+        page_numbers = [int(a.text) for a in page_links if a.text.isdigit()]
+        total_pages  = max(page_numbers) if page_numbers else 1
+    
+        # 3) Only scrape 2 pages per run (to stay under the 10 min timeout)
+        pages_per_run = 2
+        end_page      = min(current_page + pages_per_run - 1, total_pages)
+    
         # Track processed URLs to prevent duplicates
         processed_urls = set()
-        
-        logging.info(f"Starting scrape from page {current_page} to {end_page} (of max {absolute_max_pages})")
-               
-        
+    
+        logging.info(f"Scraping pages {current_page}–{end_page} of {total_pages}")
+             
         while current_page <= end_page:
             logging.info(f"Processing page {current_page} of {end_page}")
             # Modify URL for pagination
