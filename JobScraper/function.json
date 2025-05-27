@@ -3,8 +3,8 @@
     {
       "type": "timerTrigger",
       "name": "mytimer",
-      // fire at 08:00, 08:15, 08:30, 08:45
-      "schedule": "0 0,15,30,45 8 * * *"
+      // local Warsaw time: every 15 minutes from 9–10 AM
+      "schedule": "0 */15 9-10 * * *"
     }
   ]
 }
