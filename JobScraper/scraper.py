@@ -57,9 +57,7 @@ def run_scraper():
         logging.info("Starting pracuj.pl scraper...")
         jobs, skills = scrape_pracuj()
         for job in jobs:
-            job_id = insert_job_listing(job)
-            if job_id:
-                process_skills(job, skills.get(job.job_id, []), skill_categories)
+                process_skills(job, skills.get(job.job_id, []), skill_categories)              
                 total_skills += len(skills.get(job.job_id, []))
         total_jobs += len(jobs)
         logging.info(f"Completed pracuj.pl scraper. Found {len(jobs)} jobs.")
