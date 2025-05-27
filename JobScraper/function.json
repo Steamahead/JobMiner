@@ -4,7 +4,7 @@
       "type": "timerTrigger",
       "name": "mytimer",
       // local Warsaw time: every 15 minutes from 9–10 AM
-      "schedule": "0 */15 9-10 * * *"
+      "schedule": "0 */15 12-13 * * *"
     }
   ]
 }
