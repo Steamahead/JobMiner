@@ -452,12 +452,13 @@ class PracujScraper(BaseScraper):
         current_page        = last_processed_page
         starting_page       = current_page
     
-        # 2) Auto-detect how many pages exist right now
-        first_html   = self.get_page_html(self.search_url)
-        first_soup   = BeautifulSoup(first_html, "html.parser")
-        page_links   = first_soup.select("ul.pagination__list a")
-        page_numbers = [int(a.text) for a in page_links if a.text.isdigit()]
-        total_pages  = max(page_numbers) if page_numbers else 1
+         # 2) Auto-detect how many pages exist right now (updated selector)
+         first_html    = self.get_page_html(self.search_url)
+         first_soup    = BeautifulSoup(first_html, "html.parser")
+         # look for the pagination nav buttons
+         page_buttons  = first_soup.select('nav[data-test="pagination"] button[data-test="pagination-item"]')
+         page_numbers  = [int(btn.get_text()) for btn in page_buttons if btn.get_text().isdigit()]
+         total_pages   = max(page_numbers) if page_numbers else 1
     
         # 3) Only scrape 2 pages per run (to stay under the 10 min timeout)
         pages_per_run = 2
@@ -601,7 +602,8 @@ class PracujScraper(BaseScraper):
                         extracted_skills = self._extract_skills_from_listing(detail_soup)
                         
                         # Generate a unique job ID 
-                        job_id = str(uuid.uuid4())
+                         external_id_match = re.search(r',oferta,(\d+)', job_url)
+                         job_id = external_id_match.group(1) if external_id_match else job_url
                         
                         # Create job listing object (including an empty description field)
                         job = JobListing(
