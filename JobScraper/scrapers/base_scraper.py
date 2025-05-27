@@ -31,11 +31,19 @@ class BaseScraper(ABC):
     """Base class for all job scrapers"""
     
     def __init__(self):
+        # 1) HTTP headers for all requests
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/98.0.4758.102 Safari/537.36',
             'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;'
+                      'q=0.9,*/*;q=0.8'
         }
+
+        # 2) Logger instance scoped to this scraper
+        self.logger = logging.getLogger(self.__class__.__name__)
+
     
     def get_page_html(self, url: str, max_retries=3, base_delay=3) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
