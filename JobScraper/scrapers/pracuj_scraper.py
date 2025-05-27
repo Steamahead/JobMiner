@@ -451,18 +451,46 @@ class PracujScraper(BaseScraper):
         last_processed_page = self.get_last_processed_page()
         current_page        = last_processed_page
         starting_page       = current_page
-    
-        # 2) Auto-detect how many pages exist right now (updated selector)
-        first_html    = self.get_page_html(self.search_url)
-        first_soup    = BeautifulSoup(first_html, "html.parser")
-        # look for the pagination nav buttons
-        page_buttons  = first_soup.select('nav[data-test="pagination"] button[data-test="pagination-item"]')
-        page_numbers  = [int(btn.get_text()) for btn in page_buttons if btn.get_text().isdigit()]
-        total_pages   = max(page_numbers) if page_numbers else 1
-    
-        # 3) Only scrape 2 pages per run (to stay under the 10 min timeout)
-        pages_per_run = 2
-        end_page      = min(current_page + pages_per_run - 1, total_pages)
+
+        # 2) Auto-detect how many pages exist right now (robust multi-selector)
+        first_html   = self.get_page_html(self.search_url)
+        first_soup   = BeautifulSoup(first_html, "html.parser")
+
+        page_numbers = []
+
+        # a) New-style buttons
+        for btn in first_soup.select('nav[data-test="pagination"] button[data-test="pagination-item"]'):
+            txt = btn.get_text(strip=True)
+            if txt.isdigit():
+                page_numbers.append(int(txt))
+
+        # b) Legacy <ul class="pagination__list">
+        for a in first_soup.select("ul.pagination__list a"):
+            txt = a.get_text(strip=True)
+            if txt.isdigit():
+                page_numbers.append(int(txt))
+
+        # c) Any links with ?pn= query param
+        for a in first_soup.find_all("a", href=True):
+            m = re.search(r"[?&]pn=(\d+)", a["href"])
+            if m:
+                page_numbers.append(int(m.group(1)))
+
+        if page_numbers:
+            total_pages = max(page_numbers)
+        else:
+            # nothing found → assume single-page result
+            total_pages = 1
+
+        self.logger.info(
+            f"Detected total_pages={total_pages} from values: {sorted(set(page_numbers))}"
+        )
+
+        # 3) Pick which pages to scrape on this run
+        pages_per_run = 5
+        end_page      = min(starting_page + pages_per_run - 1, total_pages)
+
+        self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
     
         # Track processed URLs to prevent duplicates
         processed_urls = set()
