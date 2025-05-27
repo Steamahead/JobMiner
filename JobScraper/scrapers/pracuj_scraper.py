@@ -452,41 +452,49 @@ class PracujScraper(BaseScraper):
         current_page        = last_processed_page
         starting_page       = current_page
 
-        # 2) Auto-detect how many pages exist right now (robust multi-selector)
+        # 2) Auto-detect how many pages exist right now (parse description → buttons → URL)
         first_html   = self.get_page_html(self.search_url)
         first_soup   = BeautifulSoup(first_html, "html.parser")
 
-        page_numbers = []
+        total_pages = None
 
-        # a) New-style buttons
-        for btn in first_soup.select('nav[data-test="pagination"] button[data-test="pagination-item"]'):
-            txt = btn.get_text(strip=True)
-            if txt.isdigit():
-                page_numbers.append(int(txt))
+        # a) Try the "Strona X z Y" description
+        page_desc = first_soup.find(text=re.compile(r"Strona\s+\d+\s+z\s+\d+"))
+        if page_desc:
+            m_desc = re.search(r"Strona\s+\d+\s+z\s+(\d+)", page_desc)
+            if m_desc:
+                total_pages = int(m_desc.group(1))
+                self.logger.info(f"Detected total_pages={total_pages} from description: '{page_desc.strip()}'")  # 
 
-        # b) Legacy <ul class="pagination__list">
-        for a in first_soup.select("ul.pagination__list a"):
-            txt = a.get_text(strip=True)
-            if txt.isdigit():
-                page_numbers.append(int(txt))
+        # b) Fallback → look for any numbered pagination buttons
+        if total_pages is None:
+            nums = []
+            # catch any <a> or <button> whose text is a digit
+            for el in first_soup.select("a, button"):
+                txt = el.get_text(strip=True)
+                if txt.isdigit():
+                    nums.append(int(txt))
+            if nums:
+                total_pages = max(nums)
+                self.logger.info(f"Detected total_pages={total_pages} from buttons: {sorted(set(nums))}")
 
-        # c) Any links with ?pn= query param
-        for a in first_soup.find_all("a", href=True):
-            m = re.search(r"[?&]pn=(\d+)", a["href"])
-            if m:
-                page_numbers.append(int(m.group(1)))
+        # c) Fallback → catch any '?pn=N' in hrefs
+        if total_pages is None:
+            nums = []
+            for a in first_soup.find_all("a", href=True):
+                m = re.search(r"[?&]pn=(\d+)", a["href"])
+                if m:
+                    nums.append(int(m.group(1)))
+            if nums:
+                total_pages = max(nums)
+                self.logger.info(f"Detected total_pages={total_pages} from URL params: {sorted(set(nums))}")
 
-        if page_numbers:
-            total_pages = max(page_numbers)
-        else:
-            # nothing found → assume single-page result
+        # d) If still missing, assume just one page
+        if total_pages is None:
             total_pages = 1
+            self.logger.warning("Could not detect pagination; defaulting to total_pages=1")
 
-        self.logger.info(
-            f"Detected total_pages={total_pages} from values: {sorted(set(page_numbers))}"
-        )
-
-        # 3) Pick which pages to scrape on this run
+        # 3) Pick which pages to scrape this run
         pages_per_run = 5
         end_page      = min(starting_page + pages_per_run - 1, total_pages)
 
