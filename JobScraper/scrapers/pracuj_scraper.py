@@ -450,6 +450,7 @@ class PracujScraper(BaseScraper):
         # 1) Resume from last saved page
         last_processed_page = self.get_last_processed_page()
         current_page        = last_processed_page
+        starting_page       = current_page
     
         # 2) Auto-detect how many pages exist right now
         first_html   = self.get_page_html(self.search_url)
