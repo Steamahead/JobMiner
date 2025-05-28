@@ -1,3 +1,9 @@
+from typing import List, Dict, Tuple, Set
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+import re
+import time
 from ..models   import JobListing, Skill
 from ..database import insert_job_listing, insert_skill
 from .base_scraper import BaseScraper
@@ -495,7 +501,7 @@ class PracujScraper(BaseScraper):
             self.logger.warning("Could not detect pagination; defaulting to total_pages=1")
 
         # 3) Pick which pages to scrape this run
-        pages_per_run = 5
+        pages_per_run = total_pages
         end_page      = min(starting_page + pages_per_run - 1, total_pages)
 
         self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
@@ -506,9 +512,47 @@ class PracujScraper(BaseScraper):
         logging.info(f"Scraping pages {current_page}–{end_page} of {total_pages}")
              
         while current_page <= end_page:
-            logging.info(f"Processing page {current_page} of {end_page}")
+            self.logger.info(f"Processing page {current_page} of {end_page}")
             # Modify URL for pagination
             page_url = f"{self.search_url}" if current_page == 1 else f"{self.search_url}&pn={current_page}"
+
+            # 1) GET the search-results page
+            html = self.get_page_html(page_url)
+            soup = BeautifulSoup(html, "html.parser")
+            job_containers = soup.select("li.offer")  # or your existing selector
+
+            # 2) Collect all new job URLs
+            job_urls = []
+            for c in job_containers:
+                url = c.select_one("a.offer-link")["href"]
+                if "pracodawcy.pracuj.pl/company" in url or url in processed_urls:
+                    self.logger.info(f"Skipping company ad URL: {url}")
+                    continue
+                job_urls.append(url)
+                processed_urls.add(url)
+
+            # 3) Fetch & parse detail pages in parallel
+            listings = []
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                future_to_url = {pool.submit(self.get_page_html, u): u for u in job_urls}
+                for fut in as_completed(future_to_url):
+                    u = future_to_url[fut]
+                    try:
+                        detail_html = fut.result(timeout=60)
+                        listing    = self._parse_job_detail(detail_html, u)
+                        listings.append(listing)
+                    except Exception as e:
+                        self.logger.error(f"Error fetching/parsing {u}: {e}")
+
+            # 4) Bulk-insert into DB
+            for job in listings:
+                if insert_job_listing(job):
+                    successful_db_inserts += 1
+
+            # checkpoint & advance
+            save_checkpoint(current_page + 1)
+            current_page += 1
+            time.sleep(random.uniform(2, 4))
             
             try:
                 # Get search results page
@@ -712,7 +756,44 @@ class PracujScraper(BaseScraper):
         logging.info(f"Jobs successfully inserted in database: {successful_db_inserts}")
         
         return all_job_listings, all_skills_dict 
-  
+
+    def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
+        """Extract a JobListing from a detail-page HTML."""
+        soup = BeautifulSoup(html, "html.parser")
+
+        # stable ID from URL
+        m = re.search(r',oferta,(\d+)', job_url)
+        job_id = m.group(1) if m else job_url
+
+        # title + company
+        title   = soup.select_one("h1.offer-title").get_text(strip=True)
+        company = soup.select_one("a.company-name").get_text(strip=True)
+
+        # badges (reuse your existing badge-parsing logic)
+        badges = self._parse_badges(soup)
+
+        # optional: years-of-experience text
+        yoe_txt = soup.find(text=re.compile(r"(\d+)\s+years?"))
+        yoe = int(re.search(r"(\d+)", yoe_txt).group(1)) if yoe_txt else None
+
+        return JobListing(
+            job_id=job_id,
+            source="pracuj.pl",
+            title=title,
+            company=company,
+            link=job_url,
+            salary_min=badges["salary_min"],
+            salary_max=badges["salary_max"],
+            location=badges["location"],
+            operating_mode=badges["operating_mode"],
+            work_type=badges["work_type"],
+            experience_level=badges["experience_level"],
+            employment_type=badges["employment_type"],
+            years_of_experience=yoe,
+            scrape_date=datetime.now(),
+            listing_status="Active"
+        )
+
 def scrape_pracuj():
     """Function to run the pracuj.pl scraper"""
     scraper = PracujScraper()
