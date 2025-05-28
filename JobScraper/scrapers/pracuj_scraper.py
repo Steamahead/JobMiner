@@ -656,7 +656,6 @@ class PracujScraper(BaseScraper):
                             experience_level=badge_info['experience_level'],
                             employment_type=badge_info['employment_type'],
                             years_of_experience=years_of_experience,
-                            description="",  # Add empty description
                             scrape_date=datetime.now(),
                             listing_status="Active"
                         )
