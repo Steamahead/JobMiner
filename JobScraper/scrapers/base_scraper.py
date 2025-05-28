@@ -45,7 +45,7 @@ class BaseScraper(ABC):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     
-    def get_page_html(self, url: str, max_retries=3, base_delay=3) -> str:
+    def get_page_html(self, url: str, max_retries=3, y=1) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
         retries = 0
         while retries < max_retries:
@@ -59,7 +59,7 @@ class BaseScraper(ABC):
                 
                 # If we hit a rate limit, wait longer and retry
                 if response.status_code == 429:
-                    retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
+                    retry_delay = y * (2 ** retries) + random.uniform(0, 3)
                     logging.warning(f"Rate limited, waiting {retry_delay:.2f} seconds before retry {retries+1}/{max_retries}")
                     time.sleep(retry_delay)
                     retries += 1
@@ -70,7 +70,7 @@ class BaseScraper(ABC):
                 
             except Exception as e:
                 retries += 1
-                retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
+                retry_delay = y * (2 ** retries) + random.uniform(0, 3)
                 logging.error(f"Error fetching URL {url}: {str(e)}")
                 logging.info(f"Retrying in {retry_delay:.2f} seconds (attempt {retries}/{max_retries})")
                 time.sleep(retry_delay)
