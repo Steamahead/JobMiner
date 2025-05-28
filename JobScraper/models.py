@@ -18,7 +18,6 @@ class JobListing:
     experience_level: str        # Entry-level, Junior, Mid, Senior
     employment_type: str         # B2B, Contract, etc.
     years_of_experience: Optional[int]  # Required years of experience
-    description: str             # Full job description
     scrape_date: datetime        # When this listing was scraped
     listing_status: str          # Active/Expired
     short_id: Optional[int] = None
