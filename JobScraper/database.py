@@ -66,7 +66,6 @@ def create_tables_if_not_exist():
                 ExperienceLevel NVARCHAR(50) NOT NULL,
                 EmploymentType NVARCHAR(50) NOT NULL,
                 YearsOfExperience INT NULL,
-                Description NVARCHAR(MAX) NOT NULL,
                 ScrapeDate DATETIME NOT NULL,
                 ListingStatus NVARCHAR(20) NOT NULL,
                 CONSTRAINT UC_JobListing UNIQUE (JobID, Source)
@@ -128,14 +127,14 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
             JobID, Source, Title, Company, Link,
             SalaryMin, SalaryMax, Location,
             OperatingMode, WorkType, ExperienceLevel, EmploymentType,
-            YearsOfExperience, Description, ScrapeDate, ListingStatus
+            YearsOfExperience, ScrapeDate, ListingStatus
         ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
         SELECT SCOPE_IDENTITY();
     """, (
         job.job_id, job.source, job.title, job.company, job.link,
         job.salary_min, job.salary_max, job.location,
         job.operating_mode, job.work_type, job.experience_level, job.employment_type,
-        job.years_of_experience, job.description, job.scrape_date, job.listing_status
+        job.years_of_experience, job.scrape_date, job.listing_status
     ))
     new_id = int(cur.fetchone()[0])
     conn.commit()
