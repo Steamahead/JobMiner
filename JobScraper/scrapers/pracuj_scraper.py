@@ -512,18 +512,18 @@ class PracujScraper(BaseScraper):
         while current_page <= end_page:
             self.logger.info(f"Processing page {current_page} of {end_page}")
         
+            # Build & fetch results page
             page_url = (
                 self.search_url
                 if current_page == 1
                 else f"{self.search_url}&pn={current_page}"
             )
             self.logger.info(f"Fetching search results from {page_url}")
-        
-            # 1) Collect URLs from the results page
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
             job_containers = soup.select("li.offer")
         
+            # 1) Gather new URLs
             job_urls = []
             for c in job_containers:
                 url = c.select_one("a.offer-link")["href"]
@@ -533,7 +533,7 @@ class PracujScraper(BaseScraper):
                 job_urls.append(url)
                 processed_urls.add(url)
         
-            # 2) Fetch & parse detail pages in parallel
+            # 2) Parallel detail‐page fetch & parse
             listings = []
             with ThreadPoolExecutor(max_workers=8) as pool:
                 future_to_url = {pool.submit(self.get_page_html, u): u for u in job_urls}
@@ -546,18 +546,18 @@ class PracujScraper(BaseScraper):
                     except Exception as e:
                         self.logger.error(f"Error fetching/parsing {u}: {e}")
         
-            # 3) Bulk-insert into the database
+            # 3) Bulk‐insert
             for job in listings:
                 if insert_job_listing(job):
                     successful_db_inserts += 1
         
-            # 4) Checkpoint & advance to next page
+            # 4) Checkpoint & advance
             self.save_checkpoint(current_page + 1)
             current_page += 1
         
-            # 5) Short delay before the next page
+            # 5) Short delay
             time.sleep(random.uniform(2, 4))
-            # — old serial code removed here —
+
                 
                 # Find the main container with all job offers
                 offers_container = soup.find("div", attrs={"data-test": "section-offers"})
