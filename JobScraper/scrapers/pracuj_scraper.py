@@ -27,7 +27,7 @@ class PracujScraper(BaseScraper):
         )
         # Define skill categories
         self.skill_categories: Dict[str, List[str]] = {
-            # (skill_categories dict content here)
+            # ... your skill_categories dict ...
         }
 
     def get_last_processed_page(self) -> int:
@@ -37,7 +37,7 @@ class PracujScraper(BaseScraper):
                 with open(checkpoint_path, "r") as f:
                     return int(f.read().strip())
         except Exception:
-            self.logger.warning("Failed to read checkpoint, starting at page 1")
+            self.logger.warning("Failed to read checkpoint, defaulting to page 1")
         return 1
 
     def save_checkpoint(self, page_number: int):
@@ -54,11 +54,10 @@ class PracujScraper(BaseScraper):
         all_skills_dict: Dict[str, List[str]] = {}
         successful_db_inserts = 0
 
+        # Resume
         last_page = self.get_last_processed_page()
-        current_page = last_page
-        starting_page = current_page
 
-        # Detect total pages
+        # Detect total_pages
         first_html = self.get_page_html(self.search_url)
         first_soup = BeautifulSoup(first_html, "html.parser")
         total_pages: Optional[int] = None
@@ -80,7 +79,7 @@ class PracujScraper(BaseScraper):
                 total_pages = max(nums)
                 self.logger.info(f"Detected total_pages={total_pages} from buttons")
 
-        # c) '?pn=' params
+        # c) URL params
         if total_pages is None:
             nums = [int(m.group(1))
                     for a in first_soup.find_all("a", href=True)
@@ -89,17 +88,22 @@ class PracujScraper(BaseScraper):
                 total_pages = max(nums)
                 self.logger.info(f"Detected total_pages={total_pages} from URL params")
 
-        # d) default
+        # default
         if total_pages is None:
             total_pages = 1
             self.logger.warning("Could not detect pagination; defaulting to 1 page")
 
+        # Clamp start page
+        current_page = 1 if last_page > total_pages else last_page
+        starting_page = current_page
+
         pages_per_run = total_pages
-        end_page = min(starting_page + pages_per_run - 1, total_pages)
+        end_page = total_pages
         self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
 
         processed_urls: Set[str] = set()
 
+        # Loop pages
         while current_page <= end_page:
             self.logger.info(f"Processing page {current_page} of {end_page}")
             page_url = (
@@ -112,7 +116,7 @@ class PracujScraper(BaseScraper):
             soup = BeautifulSoup(html, "html.parser")
             job_containers = soup.select("li.offer")
 
-            # collect job URLs
+            # Collect URLs
             job_urls: List[str] = []
             for c in job_containers:
                 u = c.select_one("a.offer-link")["href"]
@@ -121,7 +125,7 @@ class PracujScraper(BaseScraper):
                 job_urls.append(u)
                 processed_urls.add(u)
 
-            # parallel fetch & parse
+            # Parallel fetch & parse
             listings: List[JobListing] = []
             with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = {pool.submit(self.get_page_html, u): u for u in job_urls}
@@ -133,7 +137,7 @@ class PracujScraper(BaseScraper):
                     except Exception as e:
                         self.logger.error(f"Error parsing {u}: {e}")
 
-            # insert jobs & skills
+            # Insert jobs & skills
             for job in listings:
                 job_id = insert_job_listing(job)
                 if job_id:
@@ -146,13 +150,14 @@ class PracujScraper(BaseScraper):
                         insert_skill(job_id, skill)
                     all_job_listings.append(job)
 
+            # Checkpoint & next
             self.save_checkpoint(current_page + 1)
             current_page += 1
             time.sleep(random.uniform(2, 4))
 
+        # Summary
         self.logger.info(
-            f"Processed {len(all_job_listings)} jobs over "
-            f"{current_page - starting_page} pages"
+            f"Processed {len(all_job_listings)} jobs over {current_page - starting_page} pages"
         )
         self.logger.info(f"Next run starts from page {current_page}")
         self.logger.info(f"Inserted {successful_db_inserts} new jobs")
@@ -184,6 +189,7 @@ class PracujScraper(BaseScraper):
             scrape_date=datetime.now(),
             listing_status="Active"
         )
+
 
 def scrape_pracuj():
     scraper = PracujScraper()
