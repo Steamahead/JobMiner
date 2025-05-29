@@ -1,4 +1,5 @@
 from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -16,7 +17,7 @@ from .base_scraper import BaseScraper
 
 class PracujScraper(BaseScraper):
     """Scraper for pracuj.pl job board"""
-    
+
     def __init__(self):
         super().__init__()
         self.base_url = "https://www.pracuj.pl"
@@ -27,76 +28,76 @@ class PracujScraper(BaseScraper):
                 "sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database", "ms access", 
                 "sqlite", "redshift", "snowflake", "microsoft sql server", "teradata", "clickhouse"
             ],
-            
+
             "Microsoft BI & Excel": [
                 "excel", "power query", "power pivot", "vba", "macros", "pivot tables", 
                 "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas", 
                 "power apps", "power automate", "powerpoint", "office 365"
             ],
-            
+
             "Visualization": [
                 "power bi", "tableau", "qlik", "looker", "data studio", "powerbi", "dax", 
                 "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting", "d3.js",
                 "grafana", "kibana", "google charts", "quicksight"
             ],
-            
+
             "Programming": [
                 "python", "r", "java", "scala", "c#", ".net", "javascript", "typescript", 
                 "vba", "pandas", "numpy", "jupyter", "scikit-learn", "tidyverse", "julia",
                 "sql scripting", "pl/sql", "t-sql"
             ],
-            
+
             "Data Processing": [
                 "etl", "spark", "hadoop", "kafka", "airflow", "data engineering", "big data",
                 "data cleansing", "data transformation", "data modeling", "data warehouse",
                 "databricks", "dbt", "talend", "informatica"
             ],
-            
+
             "Analytics & Statistics": [
                 "statistics", "regression", "forecasting", "analytics", "analysis", "spss", 
                 "sas", "stata", "hypothesis testing", "a/b testing", "statistical", 
                 "time series", "clustering", "segmentation", "correlation"
             ],
-            
+
             "Cloud": [
                 "aws", "azure", "gcp", "google cloud", "cloud", "onedrive", "sharepoint",
                 "snowflake", "databricks", "lambda", "s3"
             ],
-            
+
             "Business Intelligence": [
                 "business intelligence", "bi", "cognos", "business objects", "microstrategy",
                 "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense"
             ],
-            
+
             "Machine Learning and AI": [
                 "machine learning", "scikit-learn", "tensorflow", "keras", "pytorch", "deep learning",
                 "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering"
             ],
-            
+
             "Data Governance and Quality": [
                 "data governance", "data quality", "data integrity", "data validation",
                 "master data management", "metadata", "data lineage", "data catalog"
             ],
-            
+
             "Data Privacy and Security": [
                 "data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization"
             ],
-            
+
             "Project Management and Soft Skills": [
                 "project management", "agile", "scrum", "communication", "presentation", "storytelling", 
                 "collaboration", "stakeholder management", "requirements gathering", "jira", "confluence",
                 "atlassian"
             ],
-            
+
             "Version Control": [
                 "git", "github", "gitlab", "version control", "bitbucket"
             ],
-            
+
             "Data Integration and APIs": [
                 "api", "rest api", "data integration", "web scraping", "etl tools", "soap",
                 "ip rotation services"
             ],
-            
+
             "ERP and CRM Systems": [
                 "sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday"
             ]
@@ -107,7 +108,7 @@ class PracujScraper(BaseScraper):
         try:
             # Check if a checkpoint file exists in the temp directory
             checkpoint_path = os.path.join(tempfile.gettempdir(), "pracuj_checkpoint.txt")
-            
+
             if os.path.exists(checkpoint_path):
                 with open(checkpoint_path, "r") as f:
                     checkpoint_data = f.read().strip()
@@ -122,28 +123,28 @@ class PracujScraper(BaseScraper):
         try:
             # Save checkpoint to a file in the temp directory
             checkpoint_path = os.path.join(tempfile.gettempdir(), "pracuj_checkpoint.txt")
-            
+
             with open(checkpoint_path, "w") as f:
                 f.write(str(page_number))
-                
+
             logging.info(f"Saved checkpoint for page {page_number}")
         except Exception as e:
             logging.error(f"Failed to save checkpoint: {str(e)}")
-    
+
     def _extract_salary(self, salary_text: str) -> Tuple[Optional[int], Optional[int]]:
         """Extract min and max salary from salary text, handling hourly rates"""
         if not salary_text:
             return None, None
-        
+
         # Remove non-breaking spaces and other characters
         clean_text = salary_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
-        
+
         # Check if it contains hourly rate indicators
         is_hourly = 'zł/h' in clean_text or 'zł/godz' in clean_text
-        
+
         # Remove currency and other non-numeric characters
         clean_text = re.sub(r'[^\d,\.\-–]', '', clean_text)
-        
+
         # Look for patterns like "12000–20000" or "150,00-180,00"
         match = re.search(r'([\d\.,]+)[–\-]([\d\.,]+)', clean_text)
         if match:
@@ -151,21 +152,21 @@ class PracujScraper(BaseScraper):
                 # Handle both formats: "9000" and "150,00"
                 min_val = match.group(1).replace(',', '.')
                 max_val = match.group(2).replace(',', '.')
-                
+
                 # Convert to float first to handle decimal points
                 min_salary = float(min_val)
                 max_salary = float(max_val)
-                
+
                 # For hourly rates, convert to monthly (assuming 160 hours/month)
                 if is_hourly:
                     min_salary = min_salary * 160
                     max_salary = max_salary * 160
-                
+
                 # Convert to integers for database storage
                 return int(min_salary), int(max_salary)
             except ValueError:
                 pass
-                
+
         # Look for single value like "12000"
         match = re.search(r'([\d\.,]+)', clean_text)
         if match:
@@ -173,18 +174,18 @@ class PracujScraper(BaseScraper):
                 # Handle both formats
                 val = match.group(1).replace(',', '.')
                 salary = float(val)
-                
+
                 # For hourly rates, convert to monthly
                 if is_hourly:
                     salary = salary * 160
-                
+
                 # Convert to integer
                 return int(salary), int(salary)
             except ValueError:
                 pass
-                
+
         return None, None
-    
+
     def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, str]:
         """Extract information from badge elements using updated selectors"""
         result = {
@@ -194,30 +195,30 @@ class PracujScraper(BaseScraper):
             'experience_level': '',
             'employment_type': ''
         }
-        
+
         # Get operating mode (work modes) - NEW SELECTOR
         operating_mode_elem = soup.find("li", attrs={"data-scroll-id": "work-modes", "class": "lowercase c196gesj"})
         if operating_mode_elem:
             result['operating_mode'] = operating_mode_elem.get_text(strip=True)
-        
+
         # Get work type (work schedules) - NEW SELECTOR
         work_type_elem = soup.find("li", attrs={"data-test": "sections-benefit-work-schedule", 
                                             "data-scroll-id": "work-schedules"})
         if work_type_elem:
             result['work_type'] = work_type_elem.get_text(strip=True)
-        
+
         # Get experience level - NEW SELECTOR
         experience_level_elem = soup.find("li", attrs={"data-test": "sections-benefit-employment-type-name", 
                                                     "data-scroll-id": "position-levels"})
         if experience_level_elem:
             result['experience_level'] = experience_level_elem.get_text(strip=True)
-        
+
         # Get employment type - NEW SELECTOR
         employment_type_elem = soup.find("li", attrs={"data-test": "sections-benefit-contracts", 
                                                     "data-scroll-id": "contract-types"})
         if employment_type_elem:
             result['employment_type'] = employment_type_elem.get_text(strip=True)
-        
+
         # Get location - using the old method as fallback
         location_elems = soup.find_all('div', attrs={'data-test': 'offer-badge-title'})
         for location_elem in location_elems:
@@ -225,13 +226,13 @@ class PracujScraper(BaseScraper):
             if any(x in text.lower() for x in ['warszawa', 'kraków', 'wrocław', 'gdańsk', 'poznań']):
                 result['location'] = text
                 break
-        
+
         return result
-    
+
     def _extract_skills_from_listing(self, soup: BeautifulSoup) -> List[str]:
         """Extract skills from the dedicated skills section and/or description"""
         found_skills = set()
-        
+
         # FIRST PRIORITY: Check the dedicated skills section
         skills_section = soup.find("ul", attrs={"data-test": "aggregate-open-dictionary-model"})
         if skills_section:
@@ -240,7 +241,7 @@ class PracujScraper(BaseScraper):
                 skill_text = item.get_text(strip=True).lower()
                 # Add the skill directly - these are explicitly listed skills
                 found_skills.add(skill_text)
-                
+
         # SECOND PRIORITY: If few/no skills found, check the description bullets
         if len(found_skills) < 2:
             description_section = soup.find("ul", attrs={"data-test": "aggregate-bullet-model"})
@@ -248,11 +249,11 @@ class PracujScraper(BaseScraper):
                 bullet_items = description_section.find_all("li", class_="tkzmjn3")
                 # Join all bullets into one description text
                 description_text = " ".join([item.get_text(strip=True) for item in bullet_items])
-                
+
                 # Search for skills in this text
                 desc_skills = self._extract_skills_from_text(description_text)
                 found_skills.update(desc_skills)
-        
+
         # Map raw skill texts to our standardized skills
         mapped_skills = self._map_to_standard_skills(found_skills)
         return list(mapped_skills)
@@ -263,23 +264,23 @@ class PracujScraper(BaseScraper):
         all_skills = []
         for category, skills in self.skill_categories.items():
             all_skills.extend(skills)
-            
+
         # Find skills in the text
         found_skills = set()
         text_lower = text.lower()
-        
+
         for skill in all_skills:
             # Look for complete words/phrases, not partial matches
             pattern = r'\b{}\b'.format(re.escape(skill))
             if re.search(pattern, text_lower):
                 found_skills.add(skill)
-                
+
         return found_skills
 
     def _map_to_standard_skills(self, raw_skills: Set[str]) -> Set[str]:
         """Map raw skill texts to our standardized skill names"""
         mapped_skills = set()
-        
+
         # All skill variations (including case variations, plurals, etc.)
         skill_variations = {
             # Database
@@ -294,7 +295,7 @@ class PracujScraper(BaseScraper):
             "sqlite": ["sqlite", "sqlite3"],
             "redshift": ["redshift", "amazon redshift", "aws redshift"],
             "teradata": ["teradata", "tera data"],
-    
+
             # Microsoft BI & Excel
             "excel": ["excel", "microsoft excel", "ms excel", "arkusz excel", "arkusze excel", "arkusze kalkulacyjne", "microsoft 365"],
             "power query": ["power query", "powerquery", "zapytania power query", "m code", "język m", "m language"],
@@ -308,7 +309,7 @@ class PracujScraper(BaseScraper):
             "ssas": ["ssas", "sql server analysis services", "analysis services"],
             "power apps": ["power apps", "powerapps", "microsoft power apps"],
             "power automate": ["power automate", "microsoft power automate", "flow", "microsoft flow"],
-            
+
             # Visualization
             "power bi": ["power bi", "powerbi", "power-bi", "microsoft power bi", "ms power bi", "power bi desktop", "power bi service"],
             "tableau": ["tableau", "tableau desktop", "tableau server", "tableau online", "tableau prep"],
@@ -318,7 +319,7 @@ class PracujScraper(BaseScraper):
             "dax": ["dax", "data analysis expressions", "wyrażenia analizy danych", "formuły dax", "funkcje dax"],
             "dashboard": ["dashboard", "dashboards", "pulpit", "pulpity", "kokpit", "panel analityczny", "panele analityczne"],
             "reporting": ["reporting", "raportowanie", "tworzenie raportów", "generowanie raportów"],
-            
+
             # Programming
             "python": ["python", "język python", "python programming", "programowanie w python", "pythona"],
             "r": ["r", "język r", "r programming", "rstudio", "programowanie w r"],
@@ -329,14 +330,14 @@ class PracujScraper(BaseScraper):
             "pandas": ["pandas", "python pandas", "pd", "biblioteka pandas"],
             "numpy": ["numpy", "python numpy", "np", "biblioteka numpy"],
             "jupyter": ["jupyter", "jupyter notebook", "jupyter lab", "jupyterlab", "notatniki jupyter"],
-            
+
             # Data Processing
             "etl": ["etl", "extract transform load", "ekstrakcja transformacja ładowanie", "procesy etl"],
             "spark": ["spark", "apache spark", "pyspark", "spark streaming", "spark sql"],
             "hadoop": ["hadoop", "apache hadoop", "hadoop ecosystem", "hdfs", "ekosystem hadoop"],
             "data cleansing": ["data cleansing", "czyszczenie danych", "oczyszczanie danych", "data cleaning"],
             "data warehouse": ["data warehouse", "hurtownia danych", "dwh", "data warehousing"],
-            
+
             # Analytics & Statistics
             "statistics": ["statistics", "statystyka", "analizy statystyczne", "statistical analysis"],
             "regression": ["regression", "regresja", "analiza regresji", "regresja liniowa", "linear regression"],
@@ -344,19 +345,19 @@ class PracujScraper(BaseScraper):
             "analytics": ["analytics", "analityka", "analiza danych", "data analytics"],
             "analysis": ["analysis", "analiza", "analizy", "analizowanie"],
             "spss": ["spss", "ibm spss", "spss statistics"],
-            
+
             # Cloud
             "aws": ["aws", "amazon web services", "amazon aws", "ec2", "s3", "aws cloud"],
             "azure": ["azure", "microsoft azure", "azure cloud", "ms azure"],
             "gcp": ["gcp", "google cloud platform", "google cloud", "cloud platform"],
             "cloud": ["cloud", "chmura", "cloud computing", "przetwarzanie w chmurze"],
             "sharepoint": ["sharepoint", "microsoft sharepoint", "share point", "ms sharepoint"],
-            
+
             # Business Intelligence
             "business intelligence": ["business intelligence", "bi", "analityka biznesowa", "inteligencja biznesowa"],
             "olap": ["olap", "on-line analytical processing", "analityczne przetwarzanie online", "kostki olap"],
             "kpi": ["kpi", "key performance indicator", "kluczowe wskaźniki efektywności", "wskaźniki kpi"],
-            
+
             # Project Management and Soft Skills
             "project management": ["project management", "zarządzanie projektami", "pm", "project manager", "kierownik projektu"],
             "agile": ["agile", "agile methodology", "metodyka agile", "zwinne metodyki", "metodyki zwinne"],
@@ -364,18 +365,18 @@ class PracujScraper(BaseScraper):
             "jira": ["jira", "atlassian jira", "jira software"],
             "confluence": ["confluence", "atlassian confluence", "dokumentacja confluence"],
             "atlassian": ["atlassian", "narzędzia atlassian", "atlassian tools", "atlassian suite"],
-            
+
             # Version Control
             "git": ["git", "system git", "kontrola wersji git", "git version control"],
             "github": ["github", "git hub", "serwis github"],
-            
+
             # Data Integration and APIs
             "api": ["api", "application programming interface", "interfejs programistyczny aplikacji", "apis"],
             "rest api": ["rest api", "restful api", "restful", "rest apis", "restowe api"],
             "data integration": ["data integration", "integracja danych", "integrowanie danych", "systemy integracji"],
             "web scraping": ["web scraping", "screen scraping", "scraping", "ekstrakcja danych z www"],
             "ip rotation services": ["ip rotation services", "rotacja ip", "zmiana ip", "proxy rotation"],
-            
+
             # ERP and CRM Systems
             "sap": ["sap", "sap erp", "system sap", "sap system"],
             "salesforce": ["salesforce", "sales force", "salesforce crm", "sf"],
@@ -383,7 +384,7 @@ class PracujScraper(BaseScraper):
             "erp": ["erp", "enterprise resource planning", "planowanie zasobów przedsiębiorstwa", "system erp"],
             "crm": ["crm", "customer relationship management", "zarządzanie relacjami z klientami", "system crm"]
         }
-        
+
         # Map raw skills to standard names
         for raw_skill in raw_skills:
             # Direct match to a standard skill
@@ -391,13 +392,13 @@ class PracujScraper(BaseScraper):
                 if raw_skill in skills:
                     mapped_skills.add(raw_skill)
                     break
-                    
+
             # Check for variations
             for standard_skill, variations in skill_variations.items():
                 if raw_skill in variations:
                     mapped_skills.add(standard_skill)
                     break
-        
+
         return mapped_skills
 
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
@@ -407,10 +408,10 @@ class PracujScraper(BaseScraper):
                                                       "data-scroll-id": "requirements-expected-1"})
         if not requirements_section:
             return None
-        
+
         # Get the full text from the section
         requirements_text = requirements_section.get_text(strip=True).lower()
-        
+
         # Look for experience patterns in both Polish and English
         patterns = [
             # Polish patterns
@@ -426,7 +427,7 @@ class PracujScraper(BaseScraper):
             r'(\d+)\+\s*lat\w*\s*doświadczeni',
             r'(\d+)[-+](\d+)\s*lat\w*\s*doświadczeni',
             r'(\d+)[-+](\d+)\s*rok\w*\s*doświadczeni',
-            
+
             # English patterns
             r'(\d+)\s*year\w*\s*experience',
             r'experience\s*of\s*(\d+)\s*year',
@@ -435,7 +436,7 @@ class PracujScraper(BaseScraper):
             r'(\d+)\+\s*year\w*\s*experience',
             r'(\d+)[-+](\d+)\s*year\w*\s*experience'
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, requirements_text)
             if match:
@@ -444,15 +445,15 @@ class PracujScraper(BaseScraper):
                     return int(match.group(1))
                 except (ValueError, IndexError):
                     pass
-        
+
         return None
-        
+
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
         # Initialize lists to store all results
         all_job_listings     = []
         all_skills_dict      = {}
         successful_db_inserts = 0
-    
+
         # 1) Resume from last saved page
         last_processed_page = self.get_last_processed_page()
         current_page        = last_processed_page
@@ -511,19 +512,19 @@ class PracujScraper(BaseScraper):
         # 4) Loop through each results page
         while current_page <= end_page:
             self.logger.info(f"Processing page {current_page} of {end_page}")
-        
+
             page_url = (
                 self.search_url
                 if current_page == 1
                 else f"{self.search_url}&pn={current_page}"
             )
             self.logger.info(f"Fetching search results from {page_url}")
-        
+
             # 1) Collect URLs from the results page
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
             job_containers = soup.select("li.offer")
-        
+
             job_urls = []
             for c in job_containers:
                 url = c.select_one("a.offer-link")["href"]
@@ -532,7 +533,7 @@ class PracujScraper(BaseScraper):
                     continue
                 job_urls.append(url)
                 processed_urls.add(url)
-        
+
             # 2) Fetch & parse detail pages in parallel
             listings = []
             with ThreadPoolExecutor(max_workers=8) as pool:
@@ -545,20 +546,20 @@ class PracujScraper(BaseScraper):
                         listings.append(listing)
                     except Exception as e:
                         self.logger.error(f"Error fetching/parsing {u}: {e}")
-        
+
             # 3) Bulk-insert into the database
             for job in listings:
                 if insert_job_listing(job):
                     successful_db_inserts += 1
-        
+
             # 4) Checkpoint & advance to next page
             self.save_checkpoint(current_page + 1)
             current_page += 1
-        
+
             # 5) Short delay before the next page
             time.sleep(random.uniform(2, 4))
             # — old serial code removed here —
-                
+
                 # Find the main container with all job offers
                 offers_container = soup.find("div", attrs={"data-test": "section-offers"})
                 if not offers_container:
@@ -575,26 +576,26 @@ class PracujScraper(BaseScraper):
                     if not job_containers:
                         # If no articles found, try div elements that might contain job listings
                         job_containers = offers_container.find_all("div", recursive=False)
-                
+
                 logging.info(f"Found {len(job_containers)} job listings on page {current_page}")
-                
+
                 # If no jobs found on this page, stop pagination
                 if not job_containers:
                     logging.info(f"No jobs found on page {current_page}. Stopping pagination.")
                     # Save checkpoint to next page so we don't retry this page
                     self.save_checkpoint(current_page + 1)
                     break
-                
+
                 # Process jobs from this page
                 page_job_listings = []
                 page_skills_dict = {}
                 errors = 0
-                
+
                 for job_container in job_containers:
                     try:
                         # Find the job URL - try multiple approaches
                         job_url = None
-                        
+
                         # Method 1: Look for any link with job-like keywords in the URL
                         all_links = job_container.find_all("a", href=True)
                         for link in all_links:
@@ -602,7 +603,7 @@ class PracujScraper(BaseScraper):
                             if any(keyword in href.lower() for keyword in ["praca/", "oferta/", "job/", "offer/"]):
                                 job_url = href
                                 break
-                        
+
                         # Method 2: If no job-specific links found, try links with titles or header elements
                         if not job_url:
                             for link in all_links:
@@ -610,11 +611,11 @@ class PracujScraper(BaseScraper):
                                 if link.find(["h1", "h2", "h3", "h4"]) or link.get("title"):
                                     job_url = link["href"]
                                     break
-                        
+
                         # Method 3: Last resort - take the first link with a non-empty href
                         if not job_url and all_links:
                             job_url = all_links[0]["href"]
-                        
+
                         # Skip if no link found or validate the URL
                         if not job_url:
                             logging.info("Skipping job - could not find any usable link")
@@ -622,27 +623,27 @@ class PracujScraper(BaseScraper):
 
                         if not job_url.startswith("http"):
                             job_url = self.base_url + job_url
-                            
+
                         # Skip if we've already processed this URL
                         if job_url in processed_urls:
                             logging.info(f"Skipping duplicate job URL: {job_url}")
                             continue
-                            
+
                         processed_urls.add(job_url)
-                        
+
                         logging.info(f"Processing job: {job_url}")
-                        
+
                         # Now fetch the job detail page to get more information
                         job_detail_html = self.get_page_html(job_url)
                         if not job_detail_html:
                             continue
-                            
+
                         detail_soup = BeautifulSoup(job_detail_html, "html.parser")
-                        
+
                         # Extract job title
                         title_element = detail_soup.find("h1", attrs={"data-test": "text-positionName"})
                         job_title = title_element.text.strip() if title_element else "Unknown Title"
-                        
+
                         # Extract company name
                         company_element = detail_soup.find("h2", attrs={"data-test": "text-employerName"})
                         if company_element:
@@ -653,30 +654,30 @@ class PracujScraper(BaseScraper):
                             company = company_element.text.strip()
                         else:
                             company = "Unknown Company"
-                            
+
                         # Skip company ads without title/name
                         if job_title == "Unknown Title" and company == "Unknown Company":
                             logging.info(f"Skipping company ad URL: {job_url}")
                             continue
-                        
+
                         # Extract salary if available
                         salary_element = detail_soup.find("div", attrs={"data-test": "text-earningAmount"})
                         salary_text = salary_element.text.strip() if salary_element else ""
                         salary_min, salary_max = self._extract_salary(salary_text)
-                        
+
                         # Extract all badge information
                         badge_info = self._extract_badge_info(detail_soup)
-                        
+
                         # Extract years of experience
                         years_of_experience = self._extract_years_of_experience(detail_soup)
-                        
+
                         # Extract skills using our more precise method
                         extracted_skills = self._extract_skills_from_listing(detail_soup)
-                        
+
                         # Generate a unique job ID 
                         external_id_match = re.search(r',oferta,(\d+)', job_url)
                         job_id = external_id_match.group(1) if external_id_match else job_url
-                        
+
                         # Create job listing object (including an empty description field)
                         job = JobListing(
                             job_id=job_id,
@@ -695,10 +696,10 @@ class PracujScraper(BaseScraper):
                             scrape_date=datetime.now(),
                             listing_status="Active"
                         )
-                        
+
                         # Insert the job into the database
-                     
-                      
+
+
                         job_db_id = insert_job_listing(job)
                         if job.short_id:  # only “new” insertions get a short_id set
                             logging.info(f"✅ Inserted new job: {job_title} as ID {job_db_id}")
@@ -707,46 +708,46 @@ class PracujScraper(BaseScraper):
                             page_skills_dict[job_id] = extracted_skills
                         else:
                             logging.info(f"🔄 Job already existed, skipping append: {job_title}")
-                  
+
                     except Exception as e:
                         errors += 1
                         logging.error(f"Error processing job element: {str(e)}")
                         import traceback
                         logging.error(traceback.format_exc())
                         continue
-                
+
                 # Add results from this page to main collection
                 all_job_listings.extend(page_job_listings)
                 all_skills_dict.update(page_skills_dict)
-                
+
                 logging.info(f"Processed {len(page_job_listings)} jobs with {errors} errors on page {current_page}")
-                
+
                 # Save checkpoint after successfully processing this page
                 self.save_checkpoint(current_page + 1)
-                
+
                 # Add random delay before fetching next page - use shorter delays
                 if current_page < end_page:  # Only delay if not on the last page
                     page_delay = 2 + random.uniform(0, 2)
                     logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
                     time.sleep(page_delay)
-                
+
                 # Move to next page
                 current_page += 1
-                
+
             except Exception as e:
                 logging.error(f"Error processing page {current_page}: {str(e)}")
                 import traceback
                 logging.error(traceback.format_exc())
-                
+
                 # Save checkpoint to the next page even if there was an error
                 self.save_checkpoint(current_page + 1)
                 current_page += 1
-        
+
         # Final summary logs
         logging.info(f"Scrape summary: Processed {len(all_job_listings)} jobs across {current_page - starting_page} pages")
         logging.info(f"Next run will start from page {current_page}")
         logging.info(f"Jobs successfully inserted in database: {successful_db_inserts}")
-        
+
         return all_job_listings, all_skills_dict 
 
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
