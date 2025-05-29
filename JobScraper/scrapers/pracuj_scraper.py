@@ -447,117 +447,117 @@ class PracujScraper(BaseScraper):
         
         return None
         
-+    def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
-+        # Initialize
-+        all_job_listings = []
-+        all_skills_dict = {}
-+        successful_db_inserts = 0
-+
-+        # 1) Resume from last saved page
-+        last_processed_page = self.get_last_processed_page()
-+        current_page = last_processed_page
-+        starting_page = current_page
-+
-+        # 2) Detect total pages
-+        first_html = self.get_page_html(self.search_url)
-+        first_soup = BeautifulSoup(first_html, "html.parser")
-+
-+        total_pages = None
-+        # a) Try "Strona X z Y"
-+        page_desc = first_soup.find(text=re.compile(r"Strona\s+\d+\s+z\s+\d+"))
-+        if page_desc:
-+            m_desc = re.search(r"Strona\s+\d+\s+z\s+(\d+)", page_desc)
-+            if m_desc:
-+                total_pages = int(m_desc.group(1))
-+                self.logger.info(f"Detected total_pages={total_pages} from description")
-+
-+        # b) Fallback: buttons
-+        if total_pages is None:
-+            nums = [int(el.get_text(strip=True))
-+                    for el in first_soup.select("a, button")
-+                    if el.get_text(strip=True).isdigit()]
-+            if nums:
-+                total_pages = max(nums)
-+                self.logger.info(f"Detected total_pages={total_pages} from buttons")
-+
-+        # c) Fallback: "?pn=" params
-+        if total_pages is None:
-+            nums = [int(m.group(1))
-+                    for a in first_soup.find_all("a", href=True)
-+                    if (m := re.search(r"[?&]pn=(\d+)", a["href"]))]
-+            if nums:
-+                total_pages = max(nums)
-+                self.logger.info(f"Detected total_pages={total_pages} from URL params")
-+
-+        # d) Default
-+        if total_pages is None:
-+            total_pages = 1
-+            self.logger.warning("Could not detect pagination; defaulting to 1")
-+
-+        # 3) Setup pagination
-+        pages_per_run = total_pages
-+        end_page = min(starting_page + pages_per_run - 1, total_pages)
-+        self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
-+
-+        processed_urls = set()
-+
-+        # 4) Loop pages
-+        while current_page <= end_page:
-+            self.logger.info(f"Processing page {current_page} of {end_page}")
-+
-+            # fetch results page…
-+            page_url = (
-+                self.search_url
-+                if current_page == 1
-+                else f"{self.search_url}&pn={current_page}"
-+            )
-+            self.logger.info(f"Fetching {page_url}")
-+            html = self.get_page_html(page_url)
-+            soup = BeautifulSoup(html, "html.parser")
-+            job_containers = soup.select("li.offer")
-+
-+            # gather URLs…
-+            job_urls = []
-+            for c in job_containers:
-+                u = c.select_one("a.offer-link")["href"]
-+                if "pracodawcy.pracuj.pl/company" in u or u in processed_urls:
-+                    continue
-+                job_urls.append(u)
-+                processed_urls.add(u)
-+
-+            # parallel detail-page fetch & parse…
-+            listings = []
-+            with ThreadPoolExecutor(max_workers=8) as pool:
-+                futs = {pool.submit(self.get_page_html, u): u for u in job_urls}
-+                for fut in as_completed(futs):
-+                    u = futs[fut]
-+                    try:
-+                        detail_html = fut.result(timeout=60)
-+                        listings.append(self._parse_job_detail(detail_html, u))
-+                    except Exception as e:
-+                        self.logger.error(f"Error parsing {u}: {e}")
-+
-+            # bulk insert…
-+            for job in listings:
-+                if insert_job_listing(job):
-+                    successful_db_inserts += 1
-+
-+            # checkpoint & advance
-+            self.save_checkpoint(current_page + 1)
-+            current_page += 1
-+
-+            # short delay
-+            time.sleep(random.uniform(2, 4))
-+
-+        # summary
-+        self.logger.info(
-+            f"Processed {len(all_job_listings)} jobs over "
-+            f"{current_page - starting_page} pages"
-+        )
-+        self.logger.info(f"Next run from page {current_page}")
-+        self.logger.info(f"Inserted {successful_db_inserts} new jobs")
-+
-+        return all_job_listings, all_skills_dict
+    def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
+        # Initialize
+        all_job_listings = []
+        all_skills_dict = {}
+        successful_db_inserts = 0
+
+        # 1) Resume from last saved page
+        last_processed_page = self.get_last_processed_page()
+        current_page = last_processed_page
+        starting_page = current_page
+
+        # 2) Detect total pages
+        first_html = self.get_page_html(self.search_url)
+        first_soup = BeautifulSoup(first_html, "html.parser")
+
+        total_pages = None
+        # a) Try "Strona X z Y"
+        page_desc = first_soup.find(text=re.compile(r"Strona\s+\d+\s+z\s+\d+"))
+        if page_desc:
+            m_desc = re.search(r"Strona\s+\d+\s+z\s+(\d+)", page_desc)
+            if m_desc:
+                total_pages = int(m_desc.group(1))
+                self.logger.info(f"Detected total_pages={total_pages} from description")
+
+        # b) Fallback: buttons
+        if total_pages is None:
+            nums = [int(el.get_text(strip=True))
+                    for el in first_soup.select("a, button")
+                    if el.get_text(strip=True).isdigit()]
+            if nums:
+                total_pages = max(nums)
+                self.logger.info(f"Detected total_pages={total_pages} from buttons")
+
+        # c) Fallback: "?pn=" params
+        if total_pages is None:
+            nums = [int(m.group(1))
+                    for a in first_soup.find_all("a", href=True)
+                    if (m := re.search(r"[?&]pn=(\d+)", a["href"]))]
+            if nums:
+                total_pages = max(nums)
+                self.logger.info(f"Detected total_pages={total_pages} from URL params")
+
+        # d) Default
+        if total_pages is None:
+            total_pages = 1
+            self.logger.warning("Could not detect pagination; defaulting to 1")
+
+        # 3) Setup pagination
+        pages_per_run = total_pages
+        end_page = min(starting_page + pages_per_run - 1, total_pages)
+        self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
+
+        processed_urls = set()
+
+        # 4) Loop pages
+        while current_page <= end_page:
+            self.logger.info(f"Processing page {current_page} of {end_page}")
+
+            # fetch results page…
+            page_url = (
+                self.search_url
+                if current_page == 1
+                else f"{self.search_url}&pn={current_page}"
+            )
+            self.logger.info(f"Fetching {page_url}")
+            html = self.get_page_html(page_url)
+            soup = BeautifulSoup(html, "html.parser")
+            job_containers = soup.select("li.offer")
+
+            # gather URLs…
+            job_urls = []
+            for c in job_containers:
+                u = c.select_one("a.offer-link")["href"]
+                if "pracodawcy.pracuj.pl/company" in u or u in processed_urls:
+                    continue
+                job_urls.append(u)
+                processed_urls.add(u)
+
+            # parallel detail-page fetch & parse…
+            listings = []
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futs = {pool.submit(self.get_page_html, u): u for u in job_urls}
+                for fut in as_completed(futs):
+                    u = futs[fut]
+                    try:
+                        detail_html = fut.result(timeout=60)
+                        listings.append(self._parse_job_detail(detail_html, u))
+                    except Exception as e:
+                        self.logger.error(f"Error parsing {u}: {e}")
+
+            # bulk insert…
+            for job in listings:
+                if insert_job_listing(job):
+                    successful_db_inserts += 1
+
+            # checkpoint & advance
+            self.save_checkpoint(current_page + 1)
+            current_page += 1
+
+            # short delay
+            time.sleep(random.uniform(2, 4))
+
+        # summary
+        self.logger.info(
+            f"Processed {len(all_job_listings)} jobs over "
+            f"{current_page - starting_page} pages"
+        )
+        self.logger.info(f"Next run from page {current_page}")
+        self.logger.info(f"Inserted {successful_db_inserts} new jobs")
+
+        return all_job_listings, all_skills_dict
 
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         """Extract a JobListing from a detail-page HTML."""
