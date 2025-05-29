@@ -533,7 +533,8 @@ class PracujScraper(BaseScraper):
                     u = futs[fut]
                     try:
                         detail_html = fut.result(timeout=60)
-                        listings.append(self._parse_job_detail(detail_html, u))
+                        job, skills = self._parse_job_detail(detail_html, u)
+                        listings.append((job, skills))
                     except Exception as e:
                         self.logger.error(f"Error parsing {u}: {e}")
 
@@ -541,6 +542,24 @@ class PracujScraper(BaseScraper):
             for job in listings:
                 if insert_job_listing(job):
                     successful_db_inserts += 1
+
+            for job, skills in listings:
+                # 1) write to DB as before
+                if insert_job_listing(job):
+                    successful_db_inserts += 1
+                    # store each skill in the skills table
+                    for skill in skills:
+                        insert_skill(job.job_id, skill)
+            
+                # 2) collect for our return values
+                all_job_listings.append(job)
+                all_skills_dict[job.job_id] = skills
+                       
+            # collect for return
+            all_job_listings.extend(listings)
+            for job in listings:
+                skills = self._extract_skills_from_listing(job_soup)  # see next section
+                all_skills_dict[job.job_id] = skills
 
             # checkpoint & advance
             self.save_checkpoint(current_page + 1)
@@ -578,7 +597,7 @@ class PracujScraper(BaseScraper):
         yoe_txt = soup.find(text=re.compile(r"(\d+)\s+years?"))
         yoe = int(re.search(r"(\d+)", yoe_txt).group(1)) if yoe_txt else None
 
-        return JobListing(
+        job = JobListing(
             job_id=job_id,
             source="pracuj.pl",
             title=title,
@@ -595,6 +614,9 @@ class PracujScraper(BaseScraper):
             scrape_date=datetime.now(),
             listing_status="Active"
         )
+        # extract skills from the same detail page
+        skills = self._extract_skills_from_listing(soup)
+        return job, skills
 
 def scrape_pracuj():
     """Function to run the pracuj.pl scraper"""
