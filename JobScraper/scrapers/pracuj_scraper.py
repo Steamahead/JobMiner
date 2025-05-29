@@ -503,25 +503,29 @@ class PracujScraper(BaseScraper):
         # 3) Pick which pages to scrape this run
         pages_per_run = total_pages
         end_page      = min(starting_page + pages_per_run - 1, total_pages)
-
         self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
-    
+
         # Track processed URLs to prevent duplicates
         processed_urls = set()
-    
-        logging.info(f"Scraping pages {current_page}–{end_page} of {total_pages}")
-             
+
+        # 4) Loop through each results page
         while current_page <= end_page:
             self.logger.info(f"Processing page {current_page} of {end_page}")
-            # Modify URL for pagination
-            page_url = f"{self.search_url}" if current_page == 1 else f"{self.search_url}&pn={current_page}"
 
-            # 1) GET the search-results page
+            # Build the paginated URL
+            page_url = (
+                self.search_url
+                if current_page == 1
+                else f"{self.search_url}&pn={current_page}"
+            )
+            self.logger.info(f"Fetching search results from {page_url}")
+
+            # Fetch and parse the search-results page
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
-            job_containers = soup.select("li.offer")  # or your existing selector
+            job_containers = soup.select("li.offer")
 
-            # 2) Collect all new job URLs
+            # 1) Collect all new job URLs
             job_urls = []
             for c in job_containers:
                 url = c.select_one("a.offer-link")["href"]
@@ -531,7 +535,7 @@ class PracujScraper(BaseScraper):
                 job_urls.append(url)
                 processed_urls.add(url)
 
-            # 3) Fetch & parse detail pages in parallel
+            # 2) Fetch & parse detail pages in parallel
             listings = []
             with ThreadPoolExecutor(max_workers=8) as pool:
                 future_to_url = {pool.submit(self.get_page_html, u): u for u in job_urls}
@@ -544,14 +548,16 @@ class PracujScraper(BaseScraper):
                     except Exception as e:
                         self.logger.error(f"Error fetching/parsing {u}: {e}")
 
-            # 4) Bulk-insert into DB
+            # 3) Bulk-insert into the database
             for job in listings:
                 if insert_job_listing(job):
                     successful_db_inserts += 1
 
-            # checkpoint & advance
-            save_checkpoint(current_page + 1)
+            # 4) Checkpoint & advance to next page
+            self.save_checkpoint(current_page + 1)
             current_page += 1
+
+            # 5) Short delay before the next page
             time.sleep(random.uniform(2, 4))
             
             try:
