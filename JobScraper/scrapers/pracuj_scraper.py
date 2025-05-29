@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Set
+ok ryfrom typing import List, Dict, Tuple, Set
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -511,21 +511,19 @@ class PracujScraper(BaseScraper):
         # 4) Loop through each results page
         while current_page <= end_page:
             self.logger.info(f"Processing page {current_page} of {end_page}")
-
-            # Build the paginated URL
+        
             page_url = (
                 self.search_url
                 if current_page == 1
                 else f"{self.search_url}&pn={current_page}"
             )
             self.logger.info(f"Fetching search results from {page_url}")
-
-            # Fetch and parse the search-results page
+        
+            # 1) Collect URLs from the results page
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
             job_containers = soup.select("li.offer")
-
-            # 1) Collect all new job URLs
+        
             job_urls = []
             for c in job_containers:
                 url = c.select_one("a.offer-link")["href"]
@@ -534,7 +532,7 @@ class PracujScraper(BaseScraper):
                     continue
                 job_urls.append(url)
                 processed_urls.add(url)
-
+        
             # 2) Fetch & parse detail pages in parallel
             listings = []
             with ThreadPoolExecutor(max_workers=8) as pool:
@@ -547,31 +545,19 @@ class PracujScraper(BaseScraper):
                         listings.append(listing)
                     except Exception as e:
                         self.logger.error(f"Error fetching/parsing {u}: {e}")
-
+        
             # 3) Bulk-insert into the database
             for job in listings:
                 if insert_job_listing(job):
                     successful_db_inserts += 1
-
+        
             # 4) Checkpoint & advance to next page
             self.save_checkpoint(current_page + 1)
             current_page += 1
-
+        
             # 5) Short delay before the next page
             time.sleep(random.uniform(2, 4))
-            
-            try:
-                # Get search results page
-                logging.info(f"Fetching search results from {page_url}")
-                html = self.get_page_html(page_url)
-                if not html:
-                    logging.error(f"Failed to fetch search results page {current_page}")
-                    # Save checkpoint to next page so we don't retry forever
-                    self.save_checkpoint(current_page + 1)
-                    current_page += 1
-                    continue
-                    
-                soup = BeautifulSoup(html, "html.parser")
+            # — old serial code removed here —
                 
                 # Find the main container with all job offers
                 offers_container = soup.find("div", attrs={"data-test": "section-offers"})
