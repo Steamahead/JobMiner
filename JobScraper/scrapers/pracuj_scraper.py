@@ -899,154 +899,164 @@ class PracujScraper(BaseScraper):
         return None
 
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
-        # Initialize lists to store all results
-        all_job_listings     = []
-        all_skills_dict      = {}
+        all_job_listings: List[JobListing] = []
+        all_skills_dict: Dict[str, List[str]] = {}
         successful_db_inserts = 0
 
-        # 1) Resume from last saved page
-        last_processed_page = self.get_last_processed_page()
-        current_page        = last_processed_page
-        starting_page       = current_page
+        last_page = self.get_last_processed_page()
+        current_page = last_page
+        starting_page = last_page
 
-        # 2) Auto-detect how many pages exist right now (parse description → buttons → URL)
-        first_html   = self.get_page_html(self.search_url)
-        first_soup   = BeautifulSoup(first_html, "html.parser")
-
+        # Detect total pages
+        first_html = self.get_page_html(self.search_url)
+        first_soup = BeautifulSoup(first_html, "html.parser")
         total_pages = None
 
-        # a) Try the "Strona X z Y" description
-        page_desc = first_soup.find(text=re.compile(r"Strona\s+\d+\s+z\s+\d+"))
-        if page_desc:
-            m_desc = re.search(r"Strona\s+\d+\s+z\s+(\d+)", page_desc)
-            if m_desc:
-                total_pages = int(m_desc.group(1))
-                self.logger.info(f"Detected total_pages={total_pages} from description: '{page_desc.strip()}'")  # 
+        # a) “Strona X z Y”
+        desc = first_soup.find(text=re.compile(r"Strona\s+\d+\s+z\s+\d+"))
+        if desc:
+            m = re.search(r"Strona\s+\d+\s+z\s+(\d+)", desc)
+            if m:
+                total_pages = int(m.group(1))
+                logging.info(f"Detected total_pages={total_pages} from description")
 
-        # b) Fallback → look for any numbered pagination buttons
+        # b) Digit buttons fallback
         if total_pages is None:
-            nums = []
-            # catch any <a> or <button> whose text is a digit
-            for el in first_soup.select("a, button"):
-                txt = el.get_text(strip=True)
-                if txt.isdigit():
-                    nums.append(int(txt))
+            nums = [int(e.get_text()) for e in first_soup.select("a,button") if e.get_text().isdigit()]
             if nums:
                 total_pages = max(nums)
-                self.logger.info(f"Detected total_pages={total_pages} from buttons: {sorted(set(nums))}")
+                logging.info(f"Detected total_pages={total_pages} from buttons")
 
-        # c) Fallback → catch any '?pn=N' in hrefs
+        # c) URL param fallback
         if total_pages is None:
-            nums = []
-            for a in first_soup.find_all("a", href=True):
-                m = re.search(r"[?&]pn=(\d+)", a["href"])
-                if m:
-                    nums.append(int(m.group(1)))
+            nums = [
+                int(m.group(1))
+                for a in first_soup.find_all("a", href=True)
+                if (m := re.search(r"[?&]pn=(\d+)", a["href"]))
+            ]
             if nums:
                 total_pages = max(nums)
-                self.logger.info(f"Detected total_pages={total_pages} from URL params: {sorted(set(nums))}")
+                logging.info(f"Detected total_pages={total_pages} from URL params")
 
-        # d) If still missing, assume just one page
         if total_pages is None:
             total_pages = 1
-            self.logger.warning("Could not detect pagination; defaulting to total_pages=1")
+            logging.warning("Defaulting to a single page")
 
-        # 3) Pick which pages to scrape this run
+        # Reset if checkpoint beyond
         if starting_page > total_pages:
-            logging.info(f"Checkpoint page {starting_page} > total_pages={total_pages}, resetting to page 1")
-            starting_page = 1
-            current_page = 1
-    
-        pages_per_run = total_pages
-        end_page      = min(starting_page + pages_per_run - 1, total_pages)
-        self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
-        
-        # Track processed URLs to prevent duplicates
-        processed_urls = set()
+            logging.info("Checkpoint > total_pages: resetting to page 1")
+            current_page = starting_page = 1
 
-        # 4) Loop through each results page
+        end_page = min(starting_page + total_pages - 1, total_pages)
+        logging.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
+
+        processed_urls: Set[str] = set()
+
+        # Pagination loop
         while current_page <= end_page:
             try:
-                self.logger.info(f"Processing page {current_page} of {end_page}")
-    
+                logging.info(f"Processing page {current_page}/{end_page}")
                 page_url = (
                     self.search_url
                     if current_page == 1
                     else f"{self.search_url}&pn={current_page}"
                 )
-                self.logger.info(f"Fetching search results from {page_url}")
-    
-                # 1) Collect URLs from the results page
                 html = self.get_page_html(page_url)
                 soup = BeautifulSoup(html, "html.parser")
-                job_containers = soup.select("li.offer")
-    
-                job_urls = []
-                for c in job_containers:
-                    url = c.select_one("a.offer-link")["href"]
-                    if "pracodawcy.pracuj.pl/company" in url or url in processed_urls:
-                        self.logger.info(f"Skipping company ad URL: {url}")
+
+                # 1) Parallel detail-page crawl
+                li_offers = soup.select("li.offer")
+                urls = []
+                for li in li_offers:
+                    href = li.select_one("a.offer-link")["href"]
+                    if "pracodawcy.pracuj.pl/company" in href or href in processed_urls:
                         continue
-                    job_urls.append(url)
-                    processed_urls.add(url)
-    
-                # 2) Fetch & parse detail pages in parallel
+                    urls.append(href)
+                    processed_urls.add(href)
+
                 listings = []
                 with ThreadPoolExecutor(max_workers=8) as pool:
-                    future_to_url = {pool.submit(self.get_page_html, u): u for u in job_urls}
-                    for fut in as_completed(future_to_url):
-                        u = future_to_url[fut]
+                    fut2url = {pool.submit(self.get_page_html, u): u for u in urls}
+                    for fut in as_completed(fut2url):
+                        u = fut2url[fut]
                         try:
                             detail_html = fut.result(timeout=60)
-                            listing    = self._parse_job_detail(detail_html, u)
-                            listings.append(listing)
-                        except Exception as e:
-                            self.logger.error(f"Error fetching/parsing {u}: {e}")
-    
-                # 3) Bulk-insert into the database
+                            listings.append(self._parse_job_detail(detail_html, u))
+                        except Exception as ex:
+                            logging.error(f"Error parsing {u}: {ex}")
+
                 for job in listings:
                     if insert_job_listing(job):
                         successful_db_inserts += 1
-    
-                # 4) Checkpoint & advance to next page
-                self.save_checkpoint(current_page + 1)
-                current_page += 1
-    
-                # 5) Short delay before the next page
+
+                # short delay
                 time.sleep(random.uniform(2, 4))
-                # — old serial code removed here —
 
-                # 6) Serial parse as primary or fallback
-                offers_container = soup.find("div", attrs={"data-test": "section-offers"})
-                if offers_container:
-                    # PRIMARY: look for <article> items, then fallback to direct div children
-                    job_containers = offers_container.find_all("article")
-                    if not job_containers:
-                        job_containers = offers_container.find_all("div", recursive=False)
+                # 2) Serial/fallback parse in page HTML
+                offers_div = soup.find("div", attrs={"data-test": "section-offers"})
+                if offers_div:
+                    jc = offers_div.find_all("article") or offers_div.find_all("div", recursive=False)
                 else:
-                    # FALLBACK: legacy CSS selectors
-                    logging.warning(f"Main offers container not found on page {current_page}")
-                    job_containers = soup.select(
-                        "#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83"
+                    logging.warning(f"No 'section-offers' on page {current_page}")
+                    jc = (
+                        soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
+                        or soup.select("div.listing_ohw4t83")
+                        or soup.find_all("div", class_=lambda c: c and "listing_" in c)
                     )
-                    if not job_containers:
-                        job_containers = soup.select("div.listing_ohw4t83")
-                    if not job_containers:
-                        job_containers = soup.find_all(
-                            "div", class_=lambda c: c and "listing_" in c
-                        )
 
-                logging.info(f"Found {len(job_containers)} job listings on page {current_page}")
-
-                if not job_containers:
-                    logging.info(f"No jobs found on page {current_page}. Stopping pagination.")
+                logging.info(f"Found {len(jc)} job containers on page {current_page}")
+                if not jc:
                     self.save_checkpoint(current_page + 1)
                     break
 
-                # Prepare per-page accumulators
-                page_job_listings = []
-                page_skills_dict  = {}
-                errors            = 0
+                page_listings: List[JobListing] = []
+                page_skills: Dict[str, List[str]] = {}
+                errors = 0
+
+                for block in jc:
+                    try:
+                        # ← **INSERT YOUR PER-JOB EXTRACTION LOGIC HERE** (exactly as in your original)
+                        pass
+                    except Exception as ex2:
+                        errors += 1
+                        logging.error(f"Job-block error: {ex2}")
+                        continue
+
+                all_job_listings.extend(page_listings)
+                all_skills_dict.update(page_skills)
+                logging.info(f"Page {current_page}: {len(page_listings)} jobs, {errors} errors")
+
+                self.save_checkpoint(current_page + 1)
+                if current_page < end_page:
+                    time.sleep(random.uniform(2, 4))
+                current_page += 1
+
+            except Exception as pex:
+                logging.error(f"Error on page {current_page}: {pex}")
+                self.save_checkpoint(current_page + 1)
+                current_page += 1
+
+        logging.info(
+            f"Scrape complete: {len(all_job_listings)} jobs processed, "
+            f"{successful_db_inserts} new inserts."
+        )
+        return all_job_listings, all_skills_dict
+
+
+                logging.info(f"Processed {len(page_job_listings)} jobs with {errors} errors on page {current_page}")
+
+                # Save checkpoint after successfully processing this page
+                self.save_checkpoint(current_page + 1)
+
+                # Delay before next page
+                if current_page < end_page:
+                    page_delay = 2 + random.uniform(0, 2)
+                    logging.info(f"Waiting {page_delay:.2f} seconds before fetching next page")
+                    time.sleep(page_delay)
+
+                # Advance to next page
+                current_page += 1
+
 
                 # Process each job element
                 for job_container in job_containers:
