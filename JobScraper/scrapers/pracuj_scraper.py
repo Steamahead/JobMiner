@@ -952,10 +952,15 @@ class PracujScraper(BaseScraper):
             self.logger.warning("Could not detect pagination; defaulting to total_pages=1")
 
         # 3) Pick which pages to scrape this run
+        if starting_page > total_pages:
+            logging.info(f"Checkpoint page {starting_page} > total_pages={total_pages}, resetting to page 1")
+            starting_page = 1
+            current_page = 1
+    
         pages_per_run = total_pages
         end_page      = min(starting_page + pages_per_run - 1, total_pages)
         self.logger.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
-
+        
         # Track processed URLs to prevent duplicates
         processed_urls = set()
 
