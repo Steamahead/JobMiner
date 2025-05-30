@@ -1159,7 +1159,6 @@ class PracujScraper(BaseScraper):
                                 page_skills_dict[job_id] = extracted_skills
                             else:
                                 logging.info(f"🔄 Job already existed, skipping append: {job_title}")
-
                         except Exception as e:
                             errors += 1
                             logging.error(f"Error processing job element: {str(e)}")
