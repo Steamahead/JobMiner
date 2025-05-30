@@ -961,203 +961,204 @@ class PracujScraper(BaseScraper):
 
         # 4) Loop through each results page
         while current_page <= end_page:
-            self.logger.info(f"Processing page {current_page} of {end_page}")
-
-            page_url = (
-                self.search_url
-                if current_page == 1
-                else f"{self.search_url}&pn={current_page}"
-            )
-            self.logger.info(f"Fetching search results from {page_url}")
-
-            # 1) Collect URLs from the results page
-            html = self.get_page_html(page_url)
-            soup = BeautifulSoup(html, "html.parser")
-            job_containers = soup.select("li.offer")
-
-            job_urls = []
-            for c in job_containers:
-                url = c.select_one("a.offer-link")["href"]
-                if "pracodawcy.pracuj.pl/company" in url or url in processed_urls:
-                    self.logger.info(f"Skipping company ad URL: {url}")
-                    continue
-                job_urls.append(url)
-                processed_urls.add(url)
-
-            # 2) Fetch & parse detail pages in parallel
-            listings = []
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                future_to_url = {pool.submit(self.get_page_html, u): u for u in job_urls}
-                for fut in as_completed(future_to_url):
-                    u = future_to_url[fut]
-                    try:
-                        detail_html = fut.result(timeout=60)
-                        listing    = self._parse_job_detail(detail_html, u)
-                        listings.append(listing)
-                    except Exception as e:
-                        self.logger.error(f"Error fetching/parsing {u}: {e}")
-
-            # 3) Bulk-insert into the database
-            for job in listings:
-                if insert_job_listing(job):
-                    successful_db_inserts += 1
-
-            # 4) Checkpoint & advance to next page
-            self.save_checkpoint(current_page + 1)
-            current_page += 1
-
-            # 5) Short delay before the next page
-            time.sleep(random.uniform(2, 4))
-            # — old serial code removed here —
-
-            # Find the main container with all job offers
-            offers_container = soup.find("div", attrs={"data-test": "section-offers"})
-            if not offers_container:
-                logging.warning(f"Main offers container not found on page {current_page}")
-                # Try fallback to the previous selectors
-                job_containers = soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
-                if not job_containers:
-                    job_containers = soup.select("div.listing_ohw4t83")
+            try:
+                self.logger.info(f"Processing page {current_page} of {end_page}")
+    
+                page_url = (
+                    self.search_url
+                    if current_page == 1
+                    else f"{self.search_url}&pn={current_page}"
+                )
+                self.logger.info(f"Fetching search results from {page_url}")
+    
+                # 1) Collect URLs from the results page
+                html = self.get_page_html(page_url)
+                soup = BeautifulSoup(html, "html.parser")
+                job_containers = soup.select("li.offer")
+    
+                job_urls = []
+                for c in job_containers:
+                    url = c.select_one("a.offer-link")["href"]
+                    if "pracodawcy.pracuj.pl/company" in url or url in processed_urls:
+                        self.logger.info(f"Skipping company ad URL: {url}")
+                        continue
+                    job_urls.append(url)
+                    processed_urls.add(url)
+    
+                # 2) Fetch & parse detail pages in parallel
+                listings = []
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    future_to_url = {pool.submit(self.get_page_html, u): u for u in job_urls}
+                    for fut in as_completed(future_to_url):
+                        u = future_to_url[fut]
+                        try:
+                            detail_html = fut.result(timeout=60)
+                            listing    = self._parse_job_detail(detail_html, u)
+                            listings.append(listing)
+                        except Exception as e:
+                            self.logger.error(f"Error fetching/parsing {u}: {e}")
+    
+                # 3) Bulk-insert into the database
+                for job in listings:
+                    if insert_job_listing(job):
+                        successful_db_inserts += 1
+    
+                # 4) Checkpoint & advance to next page
+                self.save_checkpoint(current_page + 1)
+                current_page += 1
+    
+                # 5) Short delay before the next page
+                time.sleep(random.uniform(2, 4))
+                # — old serial code removed here —
+    
+                # Find the main container with all job offers
+                offers_container = soup.find("div", attrs={"data-test": "section-offers"})
+                if not offers_container:
+                    logging.warning(f"Main offers container not found on page {current_page}")
+                    # Try fallback to the previous selectors
+                    job_containers = soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
                     if not job_containers:
-                        job_containers = soup.find_all("div", class_=lambda c: c and "listing_" in c)
-                else:
-                    # Find all article elements within the offers container - these are individual job listings
-                    job_containers = offers_container.find_all("article")
+                        job_containers = soup.select("div.listing_ohw4t83")
+                        if not job_containers:
+                            job_containers = soup.find_all("div", class_=lambda c: c and "listing_" in c)
+                    else:
+                        # Find all article elements within the offers container - these are individual job listings
+                        job_containers = offers_container.find_all("article")
+                        if not job_containers:
+                            # If no articles found, try div elements that might contain job listings
+                            job_containers = offers_container.find_all("div", recursive=False)
+    
+                    logging.info(f"Found {len(job_containers)} job listings on page {current_page}")
+    
+                    # If no jobs found on this page, stop pagination
                     if not job_containers:
-                        # If no articles found, try div elements that might contain job listings
-                        job_containers = offers_container.find_all("div", recursive=False)
-
-                logging.info(f"Found {len(job_containers)} job listings on page {current_page}")
-
-                # If no jobs found on this page, stop pagination
-                if not job_containers:
-                    logging.info(f"No jobs found on page {current_page}. Stopping pagination.")
-                    # Save checkpoint to next page so we don't retry this page
-                    self.save_checkpoint(current_page + 1)
-                    break
-
-                # Process jobs from this page
-                page_job_listings = []
-                page_skills_dict = {}
-                errors = 0
-
-                for job_container in job_containers:
-                    try:
-                        # Find the job URL - try multiple approaches
-                        job_url = None
-
-                        # Method 1: Look for any link with job-like keywords in the URL
-                        all_links = job_container.find_all("a", href=True)
-                        for link in all_links:
-                            href = link["href"]
-                            if any(keyword in href.lower() for keyword in ["praca/", "oferta/", "job/", "offer/"]):
-                                job_url = href
-                                break
-
-                        # Method 2: If no job-specific links found, try links with titles or header elements
-                        if not job_url:
+                        logging.info(f"No jobs found on page {current_page}. Stopping pagination.")
+                        # Save checkpoint to next page so we don't retry this page
+                        self.save_checkpoint(current_page + 1)
+                        break
+    
+                    # Process jobs from this page
+                    page_job_listings = []
+                    page_skills_dict = {}
+                    errors = 0
+    
+                    for job_container in job_containers:
+                        try:
+                            # Find the job URL - try multiple approaches
+                            job_url = None
+    
+                            # Method 1: Look for any link with job-like keywords in the URL
+                            all_links = job_container.find_all("a", href=True)
                             for link in all_links:
-                                # Check if the link contains a header element
-                                if link.find(["h1", "h2", "h3", "h4"]) or link.get("title"):
-                                    job_url = link["href"]
+                                href = link["href"]
+                                if any(keyword in href.lower() for keyword in ["praca/", "oferta/", "job/", "offer/"]):
+                                    job_url = href
                                     break
-
-                        # Method 3: Last resort - take the first link with a non-empty href
-                        if not job_url and all_links:
-                            job_url = all_links[0]["href"]
-
-                        # Skip if no link found or validate the URL
-                        if not job_url:
-                            logging.info("Skipping job - could not find any usable link")
-                            continue
-
-                        if not job_url.startswith("http"):
-                            job_url = self.base_url + job_url
-
-                        # Skip if we've already processed this URL
-                        if job_url in processed_urls:
-                            logging.info(f"Skipping duplicate job URL: {job_url}")
-                            continue
-
-                        processed_urls.add(job_url)
-
-                        logging.info(f"Processing job: {job_url}")
-
-                        # Now fetch the job detail page to get more information
-                        job_detail_html = self.get_page_html(job_url)
-                        if not job_detail_html:
-                            continue
-
-                        detail_soup = BeautifulSoup(job_detail_html, "html.parser")
-
-                        # Extract job title
-                        title_element = detail_soup.find("h1", attrs={"data-test": "text-positionName"})
-                        job_title = title_element.text.strip() if title_element else "Unknown Title"
-
-                        # Extract company name
-                        company_element = detail_soup.find("h2", attrs={"data-test": "text-employerName"})
-                        if company_element:
-                            # Remove the 'O firmie' link if present
-                            company_link = company_element.find("a")
-                            if company_link:
-                                company_link.decompose()
-                            company = company_element.text.strip()
-                        else:
-                            company = "Unknown Company"
-
-                        # Skip company ads without title/name
-                        if job_title == "Unknown Title" and company == "Unknown Company":
-                            logging.info(f"Skipping company ad URL: {job_url}")
-                            continue
-
-                        # Extract salary if available
-                        salary_element = detail_soup.find("div", attrs={"data-test": "text-earningAmount"})
-                        salary_text = salary_element.text.strip() if salary_element else ""
-                        salary_min, salary_max = self._extract_salary(salary_text)
-
-                        # Extract all badge information
-                        badge_info = self._extract_badge_info(detail_soup)
-
-                        # Extract years of experience
-                        years_of_experience = self._extract_years_of_experience(detail_soup)
-
-                        # Extract skills using our more precise method
-                        extracted_skills = self._extract_skills_from_listing(detail_soup)
-
-                        # Generate a unique job ID 
-                        external_id_match = re.search(r',oferta,(\d+)', job_url)
-                        job_id = external_id_match.group(1) if external_id_match else job_url
-
-                        # Create job listing object (including an empty description field)
-                        job = JobListing(
-                            job_id=job_id,
-                            source="pracuj.pl",
-                            title=job_title,
-                            company=company,
-                            link=job_url,
-                            salary_min=salary_min,
-                            salary_max=salary_max,
-                            location=badge_info['location'],
-                            operating_mode=badge_info['operating_mode'],
-                            work_type=badge_info['work_type'],
-                            experience_level=badge_info['experience_level'],
-                            employment_type=badge_info['employment_type'],
-                            years_of_experience=years_of_experience,
-                            scrape_date=datetime.now(),
-                            listing_status="Active"
-                        )
-
-                        # Insert the job into the database
-
-
-                        job_db_id = insert_job_listing(job)
-                        if job.short_id:  # only “new” insertions get a short_id set
-                            logging.info(f"✅ Inserted new job: {job_title} as ID {job_db_id}")
-                            successful_db_inserts += 1
-                            page_job_listings.append(job)
-                            page_skills_dict[job_id] = extracted_skills
-                        else:
-                            logging.info(f"🔄 Job already existed, skipping append: {job_title}")
+    
+                            # Method 2: If no job-specific links found, try links with titles or header elements
+                            if not job_url:
+                                for link in all_links:
+                                    # Check if the link contains a header element
+                                    if link.find(["h1", "h2", "h3", "h4"]) or link.get("title"):
+                                        job_url = link["href"]
+                                        break
+    
+                            # Method 3: Last resort - take the first link with a non-empty href
+                            if not job_url and all_links:
+                                job_url = all_links[0]["href"]
+    
+                            # Skip if no link found or validate the URL
+                            if not job_url:
+                                logging.info("Skipping job - could not find any usable link")
+                                continue
+    
+                            if not job_url.startswith("http"):
+                                job_url = self.base_url + job_url
+    
+                            # Skip if we've already processed this URL
+                            if job_url in processed_urls:
+                                logging.info(f"Skipping duplicate job URL: {job_url}")
+                                continue
+    
+                            processed_urls.add(job_url)
+    
+                            logging.info(f"Processing job: {job_url}")
+    
+                            # Now fetch the job detail page to get more information
+                            job_detail_html = self.get_page_html(job_url)
+                            if not job_detail_html:
+                                continue
+    
+                            detail_soup = BeautifulSoup(job_detail_html, "html.parser")
+    
+                            # Extract job title
+                            title_element = detail_soup.find("h1", attrs={"data-test": "text-positionName"})
+                            job_title = title_element.text.strip() if title_element else "Unknown Title"
+    
+                            # Extract company name
+                            company_element = detail_soup.find("h2", attrs={"data-test": "text-employerName"})
+                            if company_element:
+                                # Remove the 'O firmie' link if present
+                                company_link = company_element.find("a")
+                                if company_link:
+                                    company_link.decompose()
+                                company = company_element.text.strip()
+                            else:
+                                company = "Unknown Company"
+    
+                            # Skip company ads without title/name
+                            if job_title == "Unknown Title" and company == "Unknown Company":
+                                logging.info(f"Skipping company ad URL: {job_url}")
+                                continue
+    
+                            # Extract salary if available
+                            salary_element = detail_soup.find("div", attrs={"data-test": "text-earningAmount"})
+                            salary_text = salary_element.text.strip() if salary_element else ""
+                            salary_min, salary_max = self._extract_salary(salary_text)
+    
+                            # Extract all badge information
+                            badge_info = self._extract_badge_info(detail_soup)
+    
+                            # Extract years of experience
+                            years_of_experience = self._extract_years_of_experience(detail_soup)
+    
+                            # Extract skills using our more precise method
+                            extracted_skills = self._extract_skills_from_listing(detail_soup)
+    
+                            # Generate a unique job ID 
+                            external_id_match = re.search(r',oferta,(\d+)', job_url)
+                            job_id = external_id_match.group(1) if external_id_match else job_url
+    
+                            # Create job listing object (including an empty description field)
+                            job = JobListing(
+                                job_id=job_id,
+                                source="pracuj.pl",
+                                title=job_title,
+                                company=company,
+                                link=job_url,
+                                salary_min=salary_min,
+                                salary_max=salary_max,
+                                location=badge_info['location'],
+                                operating_mode=badge_info['operating_mode'],
+                                work_type=badge_info['work_type'],
+                                experience_level=badge_info['experience_level'],
+                                employment_type=badge_info['employment_type'],
+                                years_of_experience=years_of_experience,
+                                scrape_date=datetime.now(),
+                                listing_status="Active"
+                            )
+    
+                            # Insert the job into the database
+    
+    
+                            job_db_id = insert_job_listing(job)
+                            if job.short_id:  # only “new” insertions get a short_id set
+                                logging.info(f"✅ Inserted new job: {job_title} as ID {job_db_id}")
+                                successful_db_inserts += 1
+                                page_job_listings.append(job)
+                                page_skills_dict[job_id] = extracted_skills
+                            else:
+                                logging.info(f"🔄 Job already existed, skipping append: {job_title}")
 
                     except Exception as e:
                         errors += 1
@@ -1184,10 +1185,10 @@ class PracujScraper(BaseScraper):
                 # Move to next page
                 current_page += 1
 
-            except Exception as e:
-                logging.error(f"Error processing page {current_page}: {str(e)}")
-                import traceback
-                logging.error(traceback.format_exc())
+        except Exception as e:
+            logging.error(f"Error processing page {current_page}: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
 
                 # Save checkpoint to the next page even if there was an error
                 self.save_checkpoint(current_page + 1)
