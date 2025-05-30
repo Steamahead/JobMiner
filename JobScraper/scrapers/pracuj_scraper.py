@@ -1015,6 +1015,11 @@ class PracujScraper(BaseScraper):
                 # 5) Short delay before the next page
                 time.sleep(random.uniform(2, 4))
                 # — old serial code removed here —
+
+                # Prepare per-page accumulators (must exist unconditionally)
+                page_job_listings = []
+                page_skills_dict   = {}
+                errors             = 0
     
                 # Find the main container with all job offers
                 offers_container = soup.find("div", attrs={"data-test": "section-offers"})
