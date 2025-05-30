@@ -1010,16 +1010,16 @@ class PracujScraper(BaseScraper):
             time.sleep(random.uniform(2, 4))
             # — old serial code removed here —
 
-                # Find the main container with all job offers
-                offers_container = soup.find("div", attrs={"data-test": "section-offers"})
-                if not offers_container:
-                    logging.warning(f"Main offers container not found on page {current_page}")
-                    # Try fallback to the previous selectors
-                    job_containers = soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
+            # Find the main container with all job offers
+            offers_container = soup.find("div", attrs={"data-test": "section-offers"})
+            if not offers_container:
+                logging.warning(f"Main offers container not found on page {current_page}")
+                # Try fallback to the previous selectors
+                job_containers = soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
+                if not job_containers:
+                    job_containers = soup.select("div.listing_ohw4t83")
                     if not job_containers:
-                        job_containers = soup.select("div.listing_ohw4t83")
-                        if not job_containers:
-                            job_containers = soup.find_all("div", class_=lambda c: c and "listing_" in c)
+                        job_containers = soup.find_all("div", class_=lambda c: c and "listing_" in c)
                 else:
                     # Find all article elements within the offers container - these are individual job listings
                     job_containers = offers_container.find_all("article")
