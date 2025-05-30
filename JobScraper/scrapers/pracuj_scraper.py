@@ -1160,12 +1160,12 @@ class PracujScraper(BaseScraper):
                             else:
                                 logging.info(f"🔄 Job already existed, skipping append: {job_title}")
 
-                    except Exception as e:
-                        errors += 1
-                        logging.error(f"Error processing job element: {str(e)}")
-                        import traceback
-                        logging.error(traceback.format_exc())
-                        continue
+                        except Exception as e:
+                            errors += 1
+                            logging.error(f"Error processing job element: {str(e)}")
+                            import traceback
+                            logging.error(traceback.format_exc())
+                            continue
 
                 # Add results from this page to main collection
                 all_job_listings.extend(page_job_listings)
