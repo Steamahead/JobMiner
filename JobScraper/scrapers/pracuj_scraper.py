@@ -560,8 +560,8 @@ class PracujScraper(BaseScraper):
             time.sleep(random.uniform(2, 4))
             # — old serial code removed here —
 
-                # Find the main container with all job offers
-                offers_container = soup.find("div", attrs={"data-test": "section-offers"})
+            # Find the main container with all job offers
+            offers_container = soup.find("div", attrs={"data-test": "section-offers"})
                 if not offers_container:
                     logging.warning(f"Main offers container not found on page {current_page}")
                     # Try fallback to the previous selectors
