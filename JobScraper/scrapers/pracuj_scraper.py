@@ -1184,10 +1184,10 @@ class PracujScraper(BaseScraper):
                 # Move to next page
                 current_page += 1
 
-        except Exception as e:
-            logging.error(f"Error processing page {current_page}: {str(e)}")
-            import traceback
-            logging.error(traceback.format_exc())
+            except Exception as e:
+                logging.error(f"Error processing page {current_page}: {str(e)}")
+                import traceback
+                logging.error(traceback.format_exc())
 
                 # Save checkpoint to the next page even if there was an error
                 self.save_checkpoint(current_page + 1)
