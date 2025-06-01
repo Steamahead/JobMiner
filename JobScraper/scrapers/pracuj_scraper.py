@@ -369,7 +369,7 @@ class PracujScraper(BaseScraper):
             listing_status="Active"
         )
 
-def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
+def scrape(self) -> Tuple[List, Dict]:
     """Main scraping method"""
     all_job_listings: List[JobListing] = []
     all_skills_dict: Dict[str, List[str]] = {}
