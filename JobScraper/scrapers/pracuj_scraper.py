@@ -379,7 +379,7 @@ class PracujScraper(BaseScraper):
         current_page = last_page
         starting_page = last_page
 
-        # Detect total pages
+        # Detect total pages - improved logic
         first_html = self.get_page_html(self.search_url)
         first_soup = BeautifulSoup(first_html, "html.parser")
         total_pages = 1
@@ -387,74 +387,44 @@ class PracujScraper(BaseScraper):
         # Debug: Log the page structure
         logging.info(f"Page title: {first_soup.title.string if first_soup.title else 'No title'}")
         
-        # Try to detect total pages from pagination
-        desc = first_soup.find(text=re.compile(r"Strona\s+\d+\s+z\s+\d+"))
-        if desc:
-            m = re.search(r"Strona\s+\d+\s+z\s+(\d+)", desc)
-            if m:
-                total_pages = int(m.group(1))
-                logging.info(f"Detected total_pages={total_pages} from description")
-
-        # Try pagination buttons as fallback
+        # Method 1: Look for pagination text like "Strona 1 z 5"
+        pagination_text = first_soup.find(string=re.compile(r"Strona\s+\d+\s+z\s+\d+", re.I))
+        if pagination_text:
+            match = re.search(r"Strona\s+\d+\s+z\s+(\d+)", pagination_text, re.I)
+            if match:
+                total_pages = int(match.group(1))
+                logging.info(f"Method 1: Detected total_pages={total_pages} from pagination text")
+        
+        # Method 2: Look for pagination navigation buttons/links
         if total_pages == 1:
-            pagination = first_soup.find_all('a', href=re.compile(r'pn=\d+'))
-            if pagination:
+            # Try to find pagination container
+            pagination_container = (first_soup.find('nav', {'aria-label': re.compile(r'paginat', re.I)}) or
+                                  first_soup.find('div', class_=lambda x: x and 'paginat' in x.lower()) or
+                                  first_soup.find('ul', class_=lambda x: x and 'paginat' in x.lower()))
+            
+            if pagination_container:
+                # Look for all page number links
+                page_links = pagination_container.find_all('a', href=re.compile(r'[?&]pn=\d+'))
                 page_numbers = []
-                for link in pagination:
-                    match = re.search(r'pn=(\d+)', link['href'])
+                for link in page_links:
+                    match = re.search(r'[?&]pn=(\d+)', link['href'])
                     if match:
                         page_numbers.append(int(match.group(1)))
+                
                 if page_numbers:
                     total_pages = max(page_numbers)
-                    logging.info(f"Detected total_pages={total_pages} from pagination links")
+                    logging.info(f"Method 2: Detected total_pages={total_pages} from pagination links")
+        
+        # Method 3: Look for "Next" button and estimate pages (fallback)
+        if total_pages == 1:
+            next_button = first_soup.find('a', string=re.compile(r'(następna|next)', re.I))
+            if next_button:
+                # If there's a next button, assume at least 2 pages, but let's be conservative and scan
+                total_pages = 10  # Set a reasonable maximum to scan
+                logging.info(f"Method 3: Found 'Next' button, will scan up to {total_pages} pages")
+        
+        logging.info(f"Final detected total_pages: {total_pages}")
 
-        # Reset if checkpoint beyond total pages
-        if starting_page > total_pages:
-            logging.info("Checkpoint > total_pages: resetting to page 1")
-            current_page = starting_page = 1
-
-        end_page = min(starting_page + total_pages - 1, total_pages)
-        logging.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
-
-        processed_urls: Set[str] = set()
-
-        # Pagination loop
-        while current_page <= end_page:
-            try:
-                logging.info(f"Processing page {current_page}/{end_page}")
-                page_url = (
-                    self.search_url
-                    if current_page == 1
-                    else f"{self.search_url}&pn={current_page}"
-                )
-                html = self.get_page_html(page_url)
-                soup = BeautifulSoup(html, "html.parser")
-
-                # Try multiple selectors to find job offers
-                urls = []
-                
-                # Method 1: Look for standard job offer selectors
-                li_offers = soup.select("li.offer")
-                logging.info(f"Found {len(li_offers)} li.offer elements")
-                
-                if not li_offers:
-                    # Method 2: Try different selectors
-                    li_offers = soup.select("div[data-test='default-offer']")
-                    logging.info(f"Found {len(li_offers)} div[data-test='default-offer'] elements")
-                
-                if not li_offers:
-                    # Method 3: Look for any links that contain 'oferta'
-                    all_links = soup.find_all('a', href=True)
-                    offer_links = [link for link in all_links if 'oferta' in link['href']]
-                    logging.info(f"Found {len(offer_links)} links containing 'oferta'")
-                    
-                    for link in offer_links[:20]:  # Limit to first 20 to avoid spam
-                        href = link['href']
-                        if href.startswith('/'):
-                            href = self.base_url + href
-                        if href not in processed_urls:
-                            urls.append(href)
-                            processed_urls.add(href)
                 else:
                     # Process standard job offers
                     for li in li_offers:
