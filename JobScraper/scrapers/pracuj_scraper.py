@@ -370,183 +370,97 @@ class PracujScraper(BaseScraper):
         )
 
     def scrape(self) -> Tuple[List['JobListing'], Dict[str, List[str]]]:
-        """Main scraping method"""
         all_job_listings: List[JobListing] = []
         all_skills_dict: Dict[str, List[str]] = {}
         successful_db_inserts = 0
-    
-        last_page = self.get_last_processed_page()
-        current_page = last_page
-        starting_page = last_page
-    
-        # Detect total pages - improved logic
-        first_html = self.get_page_html(self.search_url)
-        first_soup = BeautifulSoup(first_html, "html.parser")
-        total_pages = 1
-    
-        # Debug: Log the page structure
-        logging.info(f"Page title: {first_soup.title.string if first_soup.title else 'No title'}")
-        
-        # Method 1: Look for pagination text like "Strona 1 z 5"
-        pagination_text = first_soup.find(string=re.compile(r"Strona\s+\d+\s+z\s+\d+", re.I))
-        if pagination_text:
-            match = re.search(r"Strona\s+\d+\s+z\s+(\d+)", pagination_text, re.I)
-            if match:
-                total_pages = int(match.group(1))
-                logging.info(f"Method 1: Detected total_pages={total_pages} from pagination text")
-        
-        # Method 2: Look for pagination navigation buttons/links
-        if total_pages == 1:
-            # Try to find pagination container
-            pagination_container = (first_soup.find('nav', {'aria-label': re.compile(r'paginat', re.I)}) or
-                                  first_soup.find('div', class_=lambda x: x and 'paginat' in x.lower()) or
-                                  first_soup.find('ul', class_=lambda x: x and 'paginat' in x.lower()))
-            
-            if pagination_container:
-                # Look for all page number links
-                page_links = pagination_container.find_all('a', href=re.compile(r'[?&]pn=\d+'))
-                page_numbers = []
-                for link in page_links:
-                    match = re.search(r'[?&]pn=(\d+)', link['href'])
-                    if match:
-                        page_numbers.append(int(match.group(1)))
-                
-                if page_numbers:
-                    total_pages = max(page_numbers)
-                    logging.info(f"Method 2: Detected total_pages={total_pages} from pagination links")
-        
-        # Method 3: Look for "Next" button and estimate pages (fallback)
-        if total_pages == 1:
-            next_button = first_soup.find('a', string=re.compile(r'(następna|next)', re.I))
-            if next_button:
-                # If there's a next button, assume at least 2 pages, but let's be conservative and scan
-                total_pages = 10  # Set a reasonable maximum to scan
-                logging.info(f"Method 3: Found 'Next' button, will scan up to {total_pages} pages")
-        
-        logging.info(f"Final detected total_pages: {total_pages}")
-    
-        # Reset if checkpoint beyond total pages
-        if starting_page > total_pages:
-            logging.info("Checkpoint > total_pages: resetting to page 1")
-            current_page = starting_page = 1
-    
-        end_page = min(starting_page + total_pages - 1, total_pages)
-        logging.info(f"Scraping pages {starting_page}–{end_page} of {total_pages}")
-    
+
+        # Get the last saved page, or start at 1
+        current_page = self.get_last_processed_page()
         processed_urls: Set[str] = set()
-    
-        # Pagination loop
-        while current_page <= end_page:
-            try:
-                logging.info(f"Processing page {current_page}/{end_page}")
-                page_url = (
-                    self.search_url
-                    if current_page == 1
-                    else f"{self.search_url}&pn={current_page}"
-                )
-                html = self.get_page_html(page_url)
-                soup = BeautifulSoup(html, "html.parser")
-    
-                # Try multiple selectors to find job offers
-                urls = []
-                
-                # Method 1: Look for standard job offer selectors
-                li_offers = soup.select("li.offer")
-                logging.info(f"Found {len(li_offers)} li.offer elements")
-                
-                if not li_offers:
-                    # Method 2: Try different selectors
-                    li_offers = soup.select("div[data-test='default-offer']")
-                    logging.info(f"Found {len(li_offers)} div[data-test='default-offer'] elements")
-                
-                if not li_offers:
-                    # Method 3: Look for any links that contain 'oferta'
-                    all_links = soup.find_all('a', href=True)
-                    offer_links = [link for link in all_links if 'oferta' in link['href']]
-                    logging.info(f"Found {len(offer_links)} links containing 'oferta'")
-                    
-                    for link in offer_links[:20]:  # Limit to first 20 to avoid spam
-                        href = link['href']
-                        if href.startswith('/'):
+
+        while True:
+            logging.info(f"Processing page {current_page}")
+
+            page_url = (
+                self.search_url
+                if current_page == 1
+                else f"{self.search_url}&pn={current_page}"
+            )
+            html = self.get_page_html(page_url)
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Collect all job‐offer URLs on this page (exact same logic you already have)…
+            urls = []
+            li_offers = soup.select("li.offer")
+            if not li_offers:
+                li_offers = soup.select("div[data-test='default-offer']")
+            if not li_offers:
+                # fallback: look for any <a> containing 'oferta'
+                all_links = soup.find_all("a", href=True)
+                for link in all_links:
+                    if "oferta" in link["href"]:
+                        href = link["href"]
+                        if href.startswith("/"):
                             href = self.base_url + href
                         if href not in processed_urls:
                             urls.append(href)
                             processed_urls.add(href)
-                else:
-                    # Process standard job offers
-                    for li in li_offers:
-                        href_elem = (li.select_one("a[data-test='link-offer']") or
-                                   li.select_one("a.offer-link") or
-                                   li.select_one("a[href*='oferta']"))
-                        
-                        if href_elem and href_elem.get("href"):
-                            href = href_elem["href"]
-                            if href.startswith('/'):
-                                href = self.base_url + href
-                            
-                            if "pracodawcy.pracuj.pl/company" in href or href in processed_urls:
-                                continue
+            else:
+                for li in li_offers:
+                    href_elem = (
+                        li.select_one("a[data-test='link-offer']")
+                        or li.select_one("a.offer-link")
+                        or li.select_one("a[href*='oferta']")
+                    )
+                    if href_elem and href_elem.get("href"):
+                        href = href_elem["href"]
+                        if href.startswith("/"):
+                            href = self.base_url + href
+                        if "pracodawcy.pracuj.pl/company" in href:
+                            continue
+                        if href not in processed_urls:
                             urls.append(href)
                             processed_urls.add(href)
-    
-                logging.info(f"Found {len(urls)} job URLs to process")
-    
-                # If no URLs found, log some debug info
-                if not urls:
-                    logging.warning("No job URLs found! Debugging page structure:")
-                    # Log some elements to help debug
-                    divs = soup.find_all('div', class_=lambda x: x and 'offer' in x)[:5]
-                    logging.info(f"Found {len(divs)} divs with 'offer' in class name")
-                    
-                    links = soup.find_all('a', href=True)[:10]
-                    for link in links:
-                        logging.info(f"Sample link: {link.get('href', '')}")
-    
-                # Process job detail pages in parallel
-                page_listings = []
-                if urls:
-                    with ThreadPoolExecutor(max_workers=8) as pool:
-                        fut2url = {pool.submit(self.get_page_html, u): u for u in urls}
-                        for fut in as_completed(fut2url):
-                            u = fut2url[fut]
-                            try:
-                                detail_html = fut.result(timeout=60)
-                                job_listing = self._parse_job_detail(detail_html, u)
-                                page_listings.append(job_listing)
-                                
-                                # Extract skills for this job
-                                detail_soup = BeautifulSoup(detail_html, "html.parser")
-                                skills = self._extract_skills_from_listing(detail_soup)
-                                all_skills_dict[job_listing.job_id] = skills
-                                
-                            except Exception as ex:
-                                logging.error(f"Error parsing {u}: {ex}")
-    
-                # Insert jobs into database
-                for job in page_listings:
-                    if insert_job_listing(job):
-                        successful_db_inserts += 1
-    
-                all_job_listings.extend(page_listings)
-                
-                logging.info(f"Processed {len(page_listings)} jobs on page {current_page}")
-    
-                # Save checkpoint after successfully processing this page
-                self.save_checkpoint(current_page + 1)
-    
-                # Add delay before next page
-                if current_page < end_page:
-                    time.sleep(random.uniform(2, 4))
-    
-                current_page += 1
-    
-            except Exception as e:
-                logging.error(f"Error processing page {current_page}: {str(e)}")
-                import traceback
-                logging.error(traceback.format_exc())
-                self.save_checkpoint(current_page + 1)
-                current_page += 1
-    
+
+            logging.info(f"Found {len(urls)} job URLs on page {current_page}")
+
+            # If this page has zero new URLs, we assume we've reached the end:
+            if not urls:
+                logging.info(f"No more jobs on page {current_page}. Stopping pagination.")
+                break
+
+            # Otherwise, process each detail page exactly as before…
+            page_listings = []
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                fut2url = {pool.submit(self.get_page_html, u): u for u in urls}
+                for fut in as_completed(fut2url):
+                    u = fut2url[fut]
+                    try:
+                        detail_html = fut.result(timeout=60)
+                        job_listing = self._parse_job_detail(detail_html, u)
+                        page_listings.append(job_listing)
+
+                        detail_soup = BeautifulSoup(detail_html, "html.parser")
+                        skills = self._extract_skills_from_listing(detail_soup)
+                        all_skills_dict[job_listing.job_id] = skills
+                    except Exception as ex:
+                        logging.error(f"Error parsing {u}: {ex}")
+
+            # Insert job listings (same as before)
+            for job in page_listings:
+                if insert_job_listing(job):
+                    successful_db_inserts += 1
+
+            all_job_listings.extend(page_listings)
+            logging.info(f"Processed {len(page_listings)} jobs on page {current_page}")
+
+            # Save a checkpoint so we can resume later if something crashes:
+            self.save_checkpoint(current_page + 1)
+
+            # Throttle a bit before going to next page:
+            time.sleep(random.uniform(2, 4))
+            current_page += 1
+
         logging.info(
             f"Scrape complete: {len(all_job_listings)} jobs processed, "
             f"{successful_db_inserts} new inserts."
