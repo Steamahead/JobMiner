@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..models import JobListing
 import logging
 import requests
 import sys
@@ -78,7 +80,7 @@ class BaseScraper(ABC):
         return ""  # Return empty string if all retries fail
            
     @abstractmethod
-    def scrape(self) -> Tuple[List, Dict]:
+    def scrape(self) -> Tuple[List['JobListing'], Dict[str, List[str]]]:
         """
         Main scraping method to be implemented by each specific scraper
         Returns: (job_listings, skills_dict)
