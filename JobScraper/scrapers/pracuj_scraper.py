@@ -553,7 +553,7 @@ class PracujScraper(BaseScraper):
         )
         return all_job_listings, all_skills_dict
     
-    def scrape_pracuj():
-        """Function to run the pracuj.pl scraper"""
-        scraper = PracujScraper()
-        return scraper.scrape()
+def scrape_pracuj():
+    """Function to run the pracuj.pl scraper"""
+    scraper = PracujScraper()
+    return scraper.scrape()
