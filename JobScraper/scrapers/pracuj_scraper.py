@@ -181,7 +181,7 @@ class PracujScraper(BaseScraper):
                 elif dt.endswith("-2"):
                     result['employment_type'] = text
                 # data-test="offer-additional-info-3" → Operating mode (e.g. Praca zdalna)
-                elif dt.endswith("-3"):
+                elif dt.endswith("-4"):
                     result['operating_mode'] = text
 
         # ——— 2) Fallbacks if any of those above were not in that UL ———
@@ -340,13 +340,19 @@ class PracujScraper(BaseScraper):
             soup.select_one("h1[data-test='offer-title']")
             or soup.select_one("h1.offer-title")
             or soup.select_one("h1")
+            or soup.select_one("a[data-test='link-offer-title']")
         )
-        title = title_elem.get_text(strip=True) if title_elem else "Unknown Title"
+        if not title_elem:
+            meta_title = soup.find("meta", attrs={"property": "og:title"})
+            title = meta_title["content"].strip() if meta_title else "Unknown Title"
+        else:
+            title = title_elem.get_text(strip=True)
 
         # ——— Find company name (Adjusted: drop the broad /firma/ fallback) ———
         company_elem = (
             soup.select_one("a[data-test='offer-company-name']")
             or soup.select_one("a.company-name")
+            or soup.select_one("h3[data-test='text-company-name']")
         )
         company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
 
@@ -397,7 +403,7 @@ class PracujScraper(BaseScraper):
             # Collect all job-offer URLs on this page
             urls = []
 
-            for link in soup.find_all("a", href=True):
+            for link in soup.select("a[data-test='link-offer-title'][href]"):
                 href = link["href"]
                 if "oferta" not in href:
                     continue
