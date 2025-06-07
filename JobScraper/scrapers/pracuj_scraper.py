@@ -394,39 +394,25 @@ class PracujScraper(BaseScraper):
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
 
-            # Collect all job-offer URLs on this page
+            # Collect all job-offer URLs on this page. Some offers below
+            # advertisement banners use slightly different markup, so we scan
+            # every anchor tag and filter for links containing "oferta".
             urls = []
-            li_offers = soup.select("li.offer")
-            if not li_offers:
-                li_offers = soup.select("div[data-test='default-offer']")
-            if not li_offers:
-                # fallback: look for any <a> containing 'oferta'
-                all_links = soup.find_all("a", href=True)
-                for link in all_links:
-                    if "oferta" in link["href"]:
-                        href = link["href"]
-                        if href.startswith("/"):
-                            href = self.base_url + href
-                        if href not in processed_urls:
-                            urls.append(href)
-                            processed_urls.add(href)
-            else:
-                for li in li_offers:
-                    href_elem = (
-                        li.select_one("a[data-test='link-offer']")
-                        or li.select_one("a.offer-link")
-                        or li.select_one("a[href*='oferta']")
-                    )
-                    if href_elem and href_elem.get("href"):
-                        href = href_elem["href"]
-                        if href.startswith("/"):
-                            href = self.base_url + href
-                        # skip employer-profile links
-                        if "pracodawcy.pracuj.pl/company" in href:
-                            continue
-                        if href not in processed_urls:
-                            urls.append(href)
-                            processed_urls.add(href)
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                if "oferta" not in href:
+                    continue
+
+                # Skip employer profile or promo links
+                if "pracodawcy.pracuj.pl/company" in href:
+                    continue
+
+                if href.startswith("/"):
+                    href = self.base_url + href
+
+                if href not in processed_urls:
+                    urls.append(href)
+                    processed_urls.add(href)
 
             logging.info(f"Found {len(urls)} job URLs on page {current_page}")
 
