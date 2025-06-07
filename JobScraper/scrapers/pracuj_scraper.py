@@ -17,86 +17,73 @@ class PracujScraper(BaseScraper):
     def __init__(self):
         super().__init__()
         self.base_url = "https://www.pracuj.pl"
-        self.search_url = "https://it.pracuj.pl/praca/warszawa;wp?rd=30&et=3%2C17%2C4&its=big-data-science"
+        self.search_url = (
+            "https://it.pracuj.pl/praca/warszawa;wp?rd=30&et=3%2C17%2C4&its=big-data-science"
+        )
         # Define skill categories
         self.skill_categories = {
             "Database": [
-                "sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database", "ms access", 
-                "sqlite", "redshift", "snowflake", "microsoft sql server", "teradata", "clickhouse"
+                "sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database",
+                "ms access", "sqlite", "redshift", "snowflake", "microsoft sql server",
+                "teradata", "clickhouse",
             ],
-
             "Microsoft BI & Excel": [
-                "excel", "power query", "power pivot", "vba", "macros", "pivot tables", 
-                "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas", 
-                "power apps", "power automate", "powerpoint", "office 365"
+                "excel", "power query", "power pivot", "vba", "macros", "pivot tables",
+                "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas",
+                "power apps", "power automate", "powerpoint", "office 365",
             ],
-
             "Visualization": [
-                "power bi", "tableau", "qlik", "looker", "data studio", "powerbi", "dax", 
-                "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting", "d3.js",
-                "grafana", "kibana", "google charts", "quicksight"
+                "power bi", "tableau", "qlik", "looker", "data studio", "powerbi", "dax",
+                "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting",
+                "d3.js", "grafana", "kibana", "google charts", "quicksight",
             ],
-
             "Programming": [
-                "python", "r", "java", "scala", "c#", ".net", "javascript", "typescript", 
+                "python", "r", "java", "scala", "c#", ".net", "javascript", "typescript",
                 "vba", "pandas", "numpy", "jupyter", "scikit-learn", "tidyverse", "julia",
-                "sql scripting", "pl/sql", "t-sql"
+                "sql scripting", "pl/sql", "t-sql",
             ],
-
             "Data Processing": [
                 "etl", "spark", "hadoop", "kafka", "airflow", "data engineering", "big data",
                 "data cleansing", "data transformation", "data modeling", "data warehouse",
-                "databricks", "dbt", "talend", "informatica"
+                "databricks", "dbt", "talend", "informatica",
             ],
-
             "Analytics & Statistics": [
-                "statistics", "regression", "forecasting", "analytics", "analysis", "spss", 
-                "sas", "stata", "hypothesis testing", "a/b testing", "statistical", 
-                "time series", "clustering", "segmentation", "correlation"
+                "statistics", "regression", "forecasting", "analytics", "analysis", "spss",
+                "sas", "stata", "hypothesis testing", "a/b testing", "statistical",
+                "time series", "clustering", "segmentation", "correlation",
             ],
-
             "Cloud": [
                 "aws", "azure", "gcp", "google cloud", "cloud", "onedrive", "sharepoint",
-                "snowflake", "databricks", "lambda", "s3"
+                "snowflake", "databricks", "lambda", "s3",
             ],
-
             "Business Intelligence": [
                 "business intelligence", "bi", "cognos", "business objects", "microstrategy",
-                "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense"
+                "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense",
             ],
-
             "Machine Learning and AI": [
                 "machine learning", "scikit-learn", "tensorflow", "keras", "pytorch", "deep learning",
-                "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering"
+                "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering",
             ],
-
             "Data Governance and Quality": [
                 "data governance", "data quality", "data integrity", "data validation",
-                "master data management", "metadata", "data lineage", "data catalog"
+                "master data management", "metadata", "data lineage", "data catalog",
             ],
-
             "Data Privacy and Security": [
-                "data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization"
+                "data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization",
             ],
-
             "Project Management and Soft Skills": [
-                "project management", "agile", "scrum", "communication", "presentation", "storytelling", 
+                "project management", "agile", "scrum", "communication", "presentation", "storytelling",
                 "collaboration", "stakeholder management", "requirements gathering", "jira", "confluence",
-                "atlassian"
             ],
-
             "Version Control": [
-                "git", "github", "gitlab", "version control", "bitbucket"
+                "git", "github", "gitlab", "version control", "bitbucket",
             ],
-
             "Data Integration and APIs": [
-                "api", "rest api", "data integration", "web scraping", "etl tools", "soap",
-                "ip rotation services"
+                "api", "rest api", "data integration", "web scraping", "etl tools", "soap", "ip rotation services",
             ],
-
             "ERP and CRM Systems": [
-                "sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday"
-            ]
+                "sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday",
+            ],
         }
 
     def get_last_processed_page(self):
@@ -128,6 +115,7 @@ class PracujScraper(BaseScraper):
             return None, None
 
         clean_text = salary_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+        # Detect if this was "per hour" by looking for zł/h or zł/godz
         is_hourly = 'zł/h' in clean_text or 'zł/godz' in clean_text
         clean_text = re.sub(r'[^\d,\.\-–]', '', clean_text)
 
@@ -139,33 +127,32 @@ class PracujScraper(BaseScraper):
                 max_val = match.group(2).replace(',', '.')
                 min_salary = float(min_val)
                 max_salary = float(max_val)
-                
+
                 if is_hourly:
-                    min_salary = min_salary * 160
-                    max_salary = max_salary * 160
-                
+                    # Convert hourly to monthly by assuming 160h/month
+                    min_salary *= 160
+                    max_salary *= 160
+
                 return int(min_salary), int(max_salary)
             except ValueError:
                 pass
 
-        # Look for single value
+        # If only a single number
         match = re.search(r'([\d\.,]+)', clean_text)
         if match:
             try:
                 val = match.group(1).replace(',', '.')
                 salary = float(val)
-                
                 if is_hourly:
-                    salary = salary * 160
-                
+                    salary *= 160
                 return int(salary), int(salary)
             except ValueError:
                 pass
 
         return None, None
 
-    def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, str]:
-        """Extract information from badge elements using updated selectors"""
+    def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, object]:
+        """Extract location, salary, experience, work type, employment type, operating mode."""
         result = {
             'location': '',
             'operating_mode': '',
@@ -176,34 +163,43 @@ class PracujScraper(BaseScraper):
             'salary_max': None
         }
 
-        # Get operating mode (work modes)
-        operating_mode_elem = soup.find("li", attrs={"data-scroll-id": "work-modes"})
-        if not operating_mode_elem:
-            operating_mode_elem = soup.find("span", string=re.compile(r"(praca zdalna|hybrydow|stacjonar)", re.I))
-        if operating_mode_elem:
-            result['operating_mode'] = operating_mode_elem.get_text(strip=True)
+        # ——— 1) Parse the <ul class="tiles_bfrsaoj"> block for experience/work/employment/remote ———
+        badge_ul = soup.find("ul", class_=re.compile(r"tiles_bfrsaoj", re.I))
+        if badge_ul:
+            items = badge_ul.find_all("li", class_=re.compile(r"tiles_i14a41ct", re.I))
+            for item in items:
+                dt = item.get("data-test", "") or ""
+                text = item.get_text(strip=True)
 
-        # Get work type (work schedules)
-        work_type_elem = soup.find("li", attrs={"data-test": "sections-benefit-work-schedule"})
-        if not work_type_elem:
-            work_type_elem = soup.find("span", string=re.compile(r"(pełny etat|część etatu|umowa)", re.I))
-        if work_type_elem:
-            result['work_type'] = work_type_elem.get_text(strip=True)
+                # data-test="offer-additional-info-0" → Experience
+                if dt.endswith("-0"):
+                    result['experience_level'] = text
+                # data-test="offer-additional-info-1" → Work type (e.g. Pełny etat)
+                elif dt.endswith("-1"):
+                    result['work_type'] = text
+                # data-test="offer-additional-info-2" → Employment Type (e.g. Kontrakt B2B)
+                elif dt.endswith("-2"):
+                    result['employment_type'] = text
+                # data-test="offer-additional-info-3" → Operating mode (e.g. Praca zdalna)
+                elif dt.endswith("-3"):
+                    result['operating_mode'] = text
 
-        # Get location - try multiple selectors
+        # ——— 2) Fallbacks if any of those above were not in that UL ———
+        # (you can keep your old fallback logic if you want, but usually the UL has everything)
+
+        # ——— 3) Extract location (same as before) ———
         location_elem = soup.find('span', attrs={'data-test': 'offer-region'})
         if not location_elem:
             location_elem = soup.find('div', attrs={'data-test': 'offer-badge-title'})
         if not location_elem:
             location_elem = soup.find("span", string=re.compile(r"warszawa|kraków|wrocław|gdańsk|poznań", re.I))
-        
         if location_elem:
             result['location'] = location_elem.get_text(strip=True)
 
-        # Try to extract salary
-        salary_elem = soup.find('span', attrs={'data-test': 'offer-salary'})
+        # ——— 4) Extract salary by looking for data-test="text-earningAmount" (Adjusted) ———
+        salary_elem = soup.find('div', attrs={'data-test': 'text-earningAmount'})  # *Adjusted*
         if salary_elem:
-            salary_text = salary_elem.get_text(strip=True)
+            salary_text = salary_elem.get_text(" ", strip=True)
             min_sal, max_sal = self._extract_salary(salary_text)
             result['salary_min'] = min_sal
             result['salary_max'] = max_sal
@@ -291,9 +287,14 @@ class PracujScraper(BaseScraper):
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """Extract years of experience from requirements section"""
         # Try multiple selectors for requirements
-        requirements_section = soup.find("div", attrs={"data-test": "offer-sub-section", 
-                                                      "data-scroll-id": "requirements-expected-1"})
-        
+        requirements_section = soup.find(
+            "div",
+            attrs={
+                "data-test": "offer-sub-section",
+                "data-scroll-id": "requirements-expected-1",
+            },
+        )
+
         if not requirements_section:
             # Fallback: search in the entire page text
             page_text = soup.get_text().lower()
@@ -302,16 +303,16 @@ class PracujScraper(BaseScraper):
 
         patterns = [
             # Polish patterns
-            r'(\d+)\s*rok\w*\s*doświadczeni',
-            r'(\d+)\s*lat\w*\s*doświadczeni',
-            r'doświadczeni\w*\s*(\d+)\s*rok',
-            r'doświadczeni\w*\s*(\d+)\s*lat',
-            r'min[.:]?\s*(\d+)\s*rok\w*\s*doświadczeni',
-            r'min[.:]?\s*(\d+)\s*lat\w*\s*doświadczeni',
+            r"(\d+)\s*rok\w*\s*doświadczeni",
+            r"(\d+)\s*lat\w*\s*doświadczeni",
+            r"doświadczeni\w*\s*(\d+)\s*rok",
+            r"doświadczeni\w*\s*(\d+)\s*lat",
+            r"min[.:]?\s*(\d+)\s*rok\w*\s*doświadczeni",
+            r"min[.:]?\s*(\d+)\s*lat\w*\s*doświadczeni",
             # English patterns
-            r'(\d+)\s*year\w*\s*experience',
-            r'experience\s*of\s*(\d+)\s*year',
-            r'min[.:]?\s*(\d+)\s*year\w*\s*experience',
+            r"(\d+)\s*year\w*\s*experience",
+            r"experience\s*of\s*(\d+)\s*year",
+            r"min[.:]?\s*(\d+)\s*year\w*\s*experience",
         ]
 
         for pattern in patterns:
@@ -329,23 +330,27 @@ class PracujScraper(BaseScraper):
         soup = BeautifulSoup(html, "html.parser")
 
         # Extract stable ID from URL
-        m = re.search(r',oferta,(\d+)', job_url)
+        m = re.search(r",oferta,(\d+)", job_url)
         if not m:
-            m = re.search(r'/oferta/[^/]+/(\d+)', job_url)
+            m = re.search(r"/oferta/[^/]+/(\d+)", job_url)
         job_id = m.group(1) if m else str(hash(job_url))[:8]
 
-        # Extract title + company with multiple fallbacks
-        title_elem = (soup.select_one("h1[data-test='offer-title']") or 
-                     soup.select_one("h1.offer-title") or 
-                     soup.select_one("h1"))
+        # Extract title
+        title_elem = (
+            soup.select_one("h1[data-test='offer-title']")
+            or soup.select_one("h1.offer-title")
+            or soup.select_one("h1")
+        )
         title = title_elem.get_text(strip=True) if title_elem else "Unknown Title"
-        
-        company_elem = (soup.select_one("a[data-test='offer-company-name']") or
-                       soup.select_one("a.company-name") or
-                       soup.find("a", href=re.compile(r"/firma/")))
+
+        # ——— Find company name (Adjusted: drop the broad /firma/ fallback) ———
+        company_elem = (
+            soup.select_one("a[data-test='offer-company-name']")
+            or soup.select_one("a.company-name")
+        )
         company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
 
-        # Extract badges (location, salary, etc.)
+        # Extract badges (location, salary, experience, etc.)
         badges = self._extract_badge_info(soup)
 
         # Extract years of experience
@@ -366,10 +371,10 @@ class PracujScraper(BaseScraper):
             employment_type=badges["employment_type"],
             years_of_experience=yoe,
             scrape_date=datetime.now(),
-            listing_status="Active"
+            listing_status="Active",
         )
 
-    def scrape(self) -> Tuple[List['JobListing'], Dict[str, List[str]]]:
+    def scrape(self) -> Tuple[List["JobListing"], Dict[str, List[str]]]:
         all_job_listings: List[JobListing] = []
         all_skills_dict: Dict[str, List[str]] = {}
         successful_db_inserts = 0
@@ -389,7 +394,7 @@ class PracujScraper(BaseScraper):
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
 
-            # Collect all job‐offer URLs on this page (exact same logic you already have)…
+            # Collect all job-offer URLs on this page
             urls = []
             li_offers = soup.select("li.offer")
             if not li_offers:
@@ -416,6 +421,7 @@ class PracujScraper(BaseScraper):
                         href = href_elem["href"]
                         if href.startswith("/"):
                             href = self.base_url + href
+                        # skip employer-profile links
                         if "pracodawcy.pracuj.pl/company" in href:
                             continue
                         if href not in processed_urls:
@@ -429,7 +435,7 @@ class PracujScraper(BaseScraper):
                 logging.info(f"No more jobs on page {current_page}. Stopping pagination.")
                 break
 
-            # Otherwise, process each detail page exactly as before…
+            # Process each detail page in parallel
             page_listings = []
             with ThreadPoolExecutor(max_workers=8) as pool:
                 fut2url = {pool.submit(self.get_page_html, u): u for u in urls}
@@ -446,7 +452,7 @@ class PracujScraper(BaseScraper):
                     except Exception as ex:
                         logging.error(f"Error parsing {u}: {ex}")
 
-            # Insert job listings (same as before)
+            # Insert job listings
             for job in page_listings:
                 if insert_job_listing(job):
                     successful_db_inserts += 1
@@ -454,10 +460,10 @@ class PracujScraper(BaseScraper):
             all_job_listings.extend(page_listings)
             logging.info(f"Processed {len(page_listings)} jobs on page {current_page}")
 
-            # Save a checkpoint so we can resume later if something crashes:
+            # Save a checkpoint so we can resume if it crashes
             self.save_checkpoint(current_page + 1)
 
-            # Throttle a bit before going to next page:
+            # Throttle a bit before next page
             time.sleep(random.uniform(2, 4))
             current_page += 1
 
@@ -466,7 +472,8 @@ class PracujScraper(BaseScraper):
             f"{successful_db_inserts} new inserts."
         )
         return all_job_listings, all_skills_dict
-    
+
+
 def scrape_pracuj():
     """Function to run the pracuj.pl scraper"""
     scraper = PracujScraper()
