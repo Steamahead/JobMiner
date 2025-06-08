@@ -1,13 +1,12 @@
 from typing import List, Dict, Tuple, Set, Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import requests
 import re
 import time
-from ..models import JobListing, Skill
-from ..database import insert_job_listing, insert_skill
+from ..models import JobListing
+from ..database import insert_job_listing
 from .base_scraper import BaseScraper
-import random, os, tempfile, uuid
+import random, os, tempfile
 from datetime import datetime
 from bs4 import BeautifulSoup
 
@@ -354,7 +353,7 @@ class PracujScraper(BaseScraper):
         )
         if not title_elem:
             meta_title = soup.find("meta", attrs={"property": "og:title"})
-             if meta_title:
+            if meta_title:
                 title = meta_title["content"].strip()
             else:
                 title_tag = soup.find("title")
