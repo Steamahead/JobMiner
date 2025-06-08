@@ -4,6 +4,13 @@ import logging
 from datetime import datetime
 from .models import JobListing, Skill
 
+
+def _truncate(value: Optional[str], length: int) -> Optional[str]:
+    """Helper to ensure string does not exceed the given length."""
+    if isinstance(value, str) and len(value) > length:
+        return value[:length]
+    return value
+
 def get_sql_connection():
     """Get SQL connection using SQL authentication"""
     try:
@@ -122,7 +129,27 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
         return row[0]
 
     # insert new
-    cur.execute("""
+    # enforce column length limits
+    params = (
+        _truncate(job.job_id, 100),
+        _truncate(job.source, 50),
+        _truncate(job.title, 255),
+        _truncate(job.company, 255),
+        _truncate(job.link, 500),
+        job.salary_min,
+        job.salary_max,
+        _truncate(job.location, 255),
+        _truncate(job.operating_mode, 50),
+        _truncate(job.work_type, 50),
+        _truncate(job.experience_level, 50),
+        _truncate(job.employment_type, 50),
+        job.years_of_experience,
+        job.scrape_date,
+        _truncate(job.listing_status, 20),
+    )
+
+    cur.execute(
+        """
         INSERT INTO JobListings (
             JobID, Source, Title, Company, Link,
             SalaryMin, SalaryMax, Location,
@@ -130,12 +157,9 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
             YearsOfExperience, ScrapeDate, ListingStatus
         ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
         SELECT SCOPE_IDENTITY();
-    """, (
-        job.job_id, job.source, job.title, job.company, job.link,
-        job.salary_min, job.salary_max, job.location,
-        job.operating_mode, job.work_type, job.experience_level, job.employment_type,
-        job.years_of_experience, job.scrape_date, job.listing_status
-    ))
+    """,
+        params,
+    )
     new_id = int(cur.fetchone()[0])
     conn.commit()
     job.short_id = new_id
@@ -184,11 +208,11 @@ def insert_skill(skill: Skill) -> bool:
         """
         
         params = (
-            skill.job_id,
+            _truncate(skill.job_id, 100),
             skill.short_id,
-            skill.source,
-            skill.skill_name,
-            skill.skill_category
+            _truncate(skill.source, 50),
+            _truncate(skill.skill_name, 100),
+            _truncate(skill.skill_category, 50)
         )
         
         cursor.execute(insert_query, params)
