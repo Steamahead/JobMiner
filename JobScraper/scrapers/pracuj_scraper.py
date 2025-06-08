@@ -163,26 +163,20 @@ class PracujScraper(BaseScraper):
             "salary_max": None,
         }
 
-        # ——— 1) Parse the <ul class="tiles_bfrsaoj"> block for experience/work/employment/remote ———
-        badge_ul = soup.find("ul", class_=re.compile(r"tiles_bfrsaoj", re.I))
-        if badge_ul:
-            items = badge_ul.find_all("li", class_=re.compile(r"tiles_i14a41ct", re.I))
-            for item in items:
-                dt = item.get("data-test", "") or ""
-                text = item.get_text(strip=True)
+        # ——— 1) Parse badge items using stable data-test attributes ———
+        badge_items = soup.select("li[data-test^='offer-additional-info']")
+        for item in badge_items:
+            dt = item.get("data-test", "")
+            text = item.get_text(strip=True)
 
-                # data-test="offer-additional-info-0" → Experience
-                if dt.endswith("-0"):
-                    result["experience_level"] = text
-                # data-test="offer-additional-info-1" → Work type (e.g. Pełny etat)
-                elif dt.endswith("-1"):
-                    result["work_type"] = text
-                # data-test="offer-additional-info-2" → Employment Type (e.g. Kontrakt B2B)
-                elif dt.endswith("-2"):
-                    result["employment_type"] = text
-                # data-test="offer-additional-info-3" or "-4" → Operating mode
-                elif dt.endswith("-3") or dt.endswith("-4"):
-                    result["operating_mode"] = text
+            if dt.endswith("-0"):
+                result["experience_level"] = text
+            elif dt.endswith("-1"):
+                result["work_type"] = text
+            elif dt.endswith("-2"):
+                result["employment_type"] = text
+            elif dt.endswith("-3") or dt.endswith("-4"):
+                result["operating_mode"] = text
 
         # Fallback heuristics if any fields missing
         if not result["operating_mode"]:
@@ -421,13 +415,31 @@ class PracujScraper(BaseScraper):
             # Collect all job-offer URLs on this page
             urls = []
 
+            offers_div = soup.find("div", attrs={"data-test": "section-offers"})
+            if offers_div:
+                job_containers = offers_div.find_all("article") or offers_div.find_all("div", recursive=False)
+            else:
+                logging.warning(f"No 'section-offers' on page {current_page}")
+                job_containers = (
+                    soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
+                    or soup.select("div.listing_ohw4t83")
+                    or soup.find_all("div", class_=lambda c: c and "listing_" in c)
+                )
+
+            job_containers = [
+                c for c in job_containers
+                if not c.find('h2', text=re.compile(r'Oferty z innych lokalizacji', re.I))
+            ]
+
             link_selector = "a[data-test='link-offer-title'][href], a.tiles_o1859gd9[href]"
-            for link in soup.select(link_selector):
-                href = link["href"]
+            for container in job_containers:
+                link = container.select_one(link_selector)
+                if not link:
+                    continue
+                href = link.get("href", "")
                 if "oferta" not in href:
                     continue
 
-                # Skip employer profile or promo links
                 if "pracodawcy.pracuj.pl/company" in href:
                     continue
 
