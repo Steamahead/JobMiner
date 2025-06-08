@@ -154,13 +154,13 @@ class PracujScraper(BaseScraper):
     def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, object]:
         """Extract location, salary, experience, work type, employment type, operating mode."""
         result = {
-            'location': '',
-            'operating_mode': '',
-            'work_type': '',
-            'experience_level': '',
-            'employment_type': '',
-            'salary_min': None,
-            'salary_max': None
+            "location": "",
+            "operating_mode": "",
+            "work_type": "",
+            "experience_level": "",
+            "employment_type": "",
+            "salary_min": None,
+            "salary_max": None,
         }
 
         # ——— 1) Parse the <ul class="tiles_bfrsaoj"> block for experience/work/employment/remote ———
@@ -173,16 +173,26 @@ class PracujScraper(BaseScraper):
 
                 # data-test="offer-additional-info-0" → Experience
                 if dt.endswith("-0"):
-                    result['experience_level'] = text
+                    result["experience_level"] = text
                 # data-test="offer-additional-info-1" → Work type (e.g. Pełny etat)
                 elif dt.endswith("-1"):
-                    result['work_type'] = text
+                    result["work_type"] = text
                 # data-test="offer-additional-info-2" → Employment Type (e.g. Kontrakt B2B)
                 elif dt.endswith("-2"):
-                    result['employment_type'] = text
-                # data-test="offer-additional-info-3" → Operating mode (e.g. Praca zdalna)
-                elif dt.endswith("-4"):
-                    result['operating_mode'] = text
+                    result["employment_type"] = text
+                # data-test="offer-additional-info-3" or "-4" → Operating mode
+                elif dt.endswith("-3") or dt.endswith("-4"):
+                    result["operating_mode"] = text
+
+        # Fallback heuristics if any fields missing
+        if not result["operating_mode"]:
+            remote = soup.find("li", string=re.compile(r"zdaln|hybryd|stacjon", re.I))
+            if remote:
+                result["operating_mode"] = remote.get_text(strip=True)
+        if not result["work_type"]:
+            work_type = soup.find("li", string=re.compile(r"etat|kontrakt|umowa", re.I))
+            if work_type:
+                result["work_type"] = work_type.get_text(strip=True)
 
         # ——— 2) Fallbacks if any of those above were not in that UL ———
         # (you can keep your old fallback logic if you want, but usually the UL has everything)
@@ -344,7 +354,15 @@ class PracujScraper(BaseScraper):
         )
         if not title_elem:
             meta_title = soup.find("meta", attrs={"property": "og:title"})
-            title = meta_title["content"].strip() if meta_title else "Unknown Title"
+             if meta_title:
+                title = meta_title["content"].strip()
+            else:
+                title_tag = soup.find("title")
+                if title_tag:
+                    title_text = title_tag.get_text(strip=True)
+                    title = re.split(r"[|\-]", title_text)[0].strip()
+                else:
+                    title = "Unknown Title"
         else:
             title = title_elem.get_text(strip=True)
 
@@ -403,7 +421,8 @@ class PracujScraper(BaseScraper):
             # Collect all job-offer URLs on this page
             urls = []
 
-            for link in soup.select("a[data-test='link-offer-title'][href]"):
+            link_selector = "a[data-test='link-offer-title'][href], a.tiles_o1859gd9[href]"
+            for link in soup.select(link_selector):
                 href = link["href"]
                 if "oferta" not in href:
                     continue
