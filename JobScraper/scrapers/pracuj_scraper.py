@@ -354,7 +354,7 @@ class PracujScraper(BaseScraper):
         )
         if not title_elem:
             meta_title = soup.find("meta", attrs={"property": "og:title"})
-             if meta_title:
+            if meta_title:
                 title = meta_title["content"].strip()
             else:
                 title_tag = soup.find("title")
