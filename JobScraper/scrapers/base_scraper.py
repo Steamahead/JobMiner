@@ -8,7 +8,6 @@ import sys
 import os
 import time
 import random
-from requests.exceptions import RequestException
 
 # Try multiple paths to find BeautifulSoup
 try:
