@@ -152,7 +152,6 @@ class PracujScraper(BaseScraper):
         return None, None
 
     def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, object]:
-        """Extract location, salary, experience, work type, employment type, operating mode."""
         result = {
             "location": "",
             "operating_mode": "",
@@ -163,33 +162,30 @@ class PracujScraper(BaseScraper):
             "salary_max": None,
         }
 
-        # ——— 1) Parse badge items using stable data-test attributes ———
-        header = soup.select_one("div[data-test='section-offer-header']")
-        badge_items = (
-            header.select("li[data-test^='offer-additional-info']") if header else []
-        )
-        for item in badge_items:
-            dt = item.get("data-test", "")
-            text = item.get_text(strip=True)
+        # Find the UL of badges:
+        header = soup.find(attrs={'data-test': 'section-offer-header'})
+        badge_items = header.find_all("li") if header else []
 
-            if dt.endswith("-0"):
+        for idx, item in enumerate(badge_items[:4]):
+            text = item.get_text(strip=True)
+            if idx == 0:
                 result["experience_level"] = text
-            elif dt.endswith("-1"):
+            elif idx == 1:
                 result["work_type"] = text
-            elif dt.endswith("-2"):
+            elif idx == 2:
                 result["employment_type"] = text
-            elif dt.endswith("-3") or dt.endswith("-4"):
+            elif idx == 3:
                 result["operating_mode"] = text
 
-        # Fallback heuristics if any fields missing
+        # …then fall back on your old heuristics for anything still missing…
         if not result["operating_mode"]:
-            remote = soup.find("li", string=re.compile(r"zdaln|hybryd|stacjon", re.I))
+            remote = soup.find(string=re.compile(r"(zdaln|hybryd|stacjon)", re.I))
             if remote:
-                result["operating_mode"] = remote.get_text(strip=True)
+                result["operating_mode"] = remote.strip()
         if not result["work_type"]:
-            work_type = soup.find("li", string=re.compile(r"etat|kontrakt|umowa", re.I))
-            if work_type:
-                result["work_type"] = work_type.get_text(strip=True)
+            wt = soup.find(string=re.compile(r"(etat|kontrakt|umowa)", re.I))
+            if wt:
+                result["work_type"] = wt.strip()
 
         # ——— 2) Fallbacks if any of those above were not in that UL ———
         # (you can keep your old fallback logic if you want, but usually the UL has everything)
@@ -212,9 +208,9 @@ class PracujScraper(BaseScraper):
             result['salary_max'] = max_sal
 
         # Truncate long text fields to avoid overflows
-        for key in ["operating_mode", "work_type", "experience_level", "employment_type"]:
-            if result.get(key):
-                result[key] = result[key][:50]
+        for k in ("operating_mode","work_type","experience_level","employment_type"):
+            if result[k]:
+                result[k] = result[k][:50]
 
         return result
 
@@ -338,7 +334,6 @@ class PracujScraper(BaseScraper):
         return None
 
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
-        """Extract a JobListing from a detail-page HTML."""
         soup = BeautifulSoup(html, "html.parser")
 
         # Extract stable ID from URL
@@ -349,38 +344,22 @@ class PracujScraper(BaseScraper):
 
         # Extract title
         title_elem = (
-            soup.select_one("h1[data-test='offer-title']")
-            or soup.select_one("h1.offer-title")
-            or soup.select_one("h1")
-            or soup.select_one("a[data-test='link-offer-title']")
+            soup.select_one("h1[data-test='offer-title'], h1.offer-title")
+            or soup.find("h1")
         )
-        if not title_elem:
-            meta_title = soup.find("meta", attrs={"property": "og:title"})
-            if meta_title:
-                title = meta_title["content"].strip()
-            else:
-                title_tag = soup.find("title")
-                if title_tag:
-                    title_text = title_tag.get_text(strip=True)
-                    title = re.split(r"[|\-]", title_text)[0].strip()
-                else:
-                    title = "Unknown Title"
-        else:
-            title = title_elem.get_text(strip=True)
-
+        title = title_elem.get_text(strip=True) if title_elem else "Unknown Title"
+        
         # ——— Find company name (Adjusted: drop the broad /firma/ fallback) ———
         company_elem = (
-            soup.select_one("a[data-test='offer-company-name']")
-            or soup.select_one("a.company-name")
-            or soup.select_one("h3[data-test='text-company-name']")
+            soup.select_one("a[data-test='offer-company-name'], h3[data-test='text-company-name']")
+            or soup.select_one("div[data-test='text-company-name']")
+            or soup.find("p", class_="company-name")
         )
         company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
 
         # Extract badges (location, salary, experience, etc.)
         badges = self._extract_badge_info(soup)
-
-        # Extract years of experience
-        yoe = self._extract_years_of_experience(soup)
+        yoe    = self._extract_years_of_experience(soup)
 
         return JobListing(
             job_id=job_id,
