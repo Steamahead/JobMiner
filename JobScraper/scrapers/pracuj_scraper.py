@@ -164,7 +164,10 @@ class PracujScraper(BaseScraper):
         }
 
         # ——— 1) Parse badge items using stable data-test attributes ———
-        badge_items = soup.select("li[data-test^='offer-additional-info']")
+        header = soup.select_one("div[data-test='section-offer-header']")
+        badge_items = (
+            header.select("li[data-test^='offer-additional-info']") if header else []
+        )
         for item in badge_items:
             dt = item.get("data-test", "")
             text = item.get_text(strip=True)
@@ -207,6 +210,11 @@ class PracujScraper(BaseScraper):
             min_sal, max_sal = self._extract_salary(salary_text)
             result['salary_min'] = min_sal
             result['salary_max'] = max_sal
+
+        # Truncate long text fields to avoid overflows
+        for key in ["operating_mode", "work_type", "experience_level", "employment_type"]:
+            if result.get(key):
+                result[key] = result[key][:50]
 
         return result
 
