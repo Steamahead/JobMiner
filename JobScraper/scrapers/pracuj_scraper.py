@@ -152,31 +152,61 @@ class PracujScraper(BaseScraper):
         return None, None
 
     def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str,object]:
+        """
+        Extract SalaryMin/SalaryMax, Location, OperatingMode,
+        WorkType, ExperienceLevel, EmploymentType from the in-offer
+        benefit list + salary section.
+        """
+        result = {
+            "SalaryMin":       None,
+            "SalaryMax":       None,
+            "Location":        "",
+            "OperatingMode":   "",
+            "WorkType":        "",
+            "ExperienceLevel": "",
+            "EmploymentType":  "",
+        }
+    
         base = 'ul[data-test="sections-benefit-list"] li[data-test="{dt}"] div[data-test="offer-badge-title"]'
-        r = dict.fromkeys(["SalaryMin","SalaryMax","Location","OperatingMode",
-                           "WorkType","ExperienceLevel","EmploymentType"], None if "Salary" in _ else "")
-        # Location
+    
+        # Location: office first, else remote
         off = soup.select_one(base.format(dt="sections-benefit-workplaces"))
         wp  = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
-        r["Location"] = (off or wp).get_text(strip=True) if off or wp else ""
-        # EmploymentType
+        if off:
+            result["Location"] = off.get_text(strip=True)
+        elif wp:
+            result["Location"] = wp.get_text(strip=True)
+    
+        # EmploymentType (contract)
         et = soup.select_one(base.format(dt="sections-benefit-contracts"))
-        if et: r["EmploymentType"] = et.get_text(strip=True)
-        # WorkType
+        if et:
+            result["EmploymentType"] = et.get_text(strip=True)
+    
+        # WorkType (schedule)
         ws = soup.select_one(base.format(dt="sections-benefit-work-schedule"))
-        if ws: r["WorkType"] = ws.get_text(strip=True)
-        # ExperienceLevel
+        if ws:
+            result["WorkType"] = ws.get_text(strip=True)
+    
+        # ExperienceLevel (seniority)
         ex = soup.select_one(base.format(dt="sections-benefit-employment-type-name"))
-        if ex: r["ExperienceLevel"] = ex.get_text(strip=True)
-        # OperatingMode
+        if ex:
+            result["ExperienceLevel"] = ex.get_text(strip=True)
+    
+        # OperatingMode (mode)
         om = soup.select_one(base.format(dt="sections-benefit-work-modes-many"))
-        if om: r["OperatingMode"] = om.get_text(strip=True)
-        # Salary
-        sal = soup.select_one('div[data-test="section-salary"] div[data-test="text-earningAmount"]')
+        if om:
+            result["OperatingMode"] = om.get_text(strip=True)
+    
+        # SalaryMin & SalaryMax
+        sal = soup.select_one(
+            'div[data-test="section-salary"] div[data-test="text-earningAmount"]'
+        )
         if sal:
-            mn, mx = self._extract_salary(sal.get_text(" ",strip=True))
-            r["SalaryMin"], r["SalaryMax"] = mn, mx
-        return r
+            mn, mx = self._extract_salary(sal.get_text(" ", strip=True))
+            result["SalaryMin"], result["SalaryMax"] = mn, mx
+    
+        return result
+
 
     def _extract_skills_from_listing(self, soup: BeautifulSoup) -> List[str]:
         """Extract skills from the dedicated skills section and/or description"""
@@ -338,78 +368,55 @@ class PracujScraper(BaseScraper):
             listing_status="Active",
         )
 
-
-    def scrape(self) -> Tuple[List[JobListing], Dict[str,List[str]]]:
+    def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
         all_jobs = []
         all_skills = {}
         processed = set()
         current_page = self.get_last_processed_page()
-        badge_map = {
-            0: "experience_level",
-            1: "work_type",
-            2: "employment_type",
-            4: "operating_mode",
-        }
     
         while True:
-            page_url = self.search_url if current_page == 1 else f"{self.search_url}&pn={current_page}"
+            # 1) Fetch search results page
+            page_url = (
+                self.search_url
+                if current_page == 1
+                else f"{self.search_url}&pn={current_page}"
+            )
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
     
+            # 2) Find all job cards that actually have a link
             offers_div = soup.select_one("div[data-test='section-offers']")
-            cards = offers_div and offers_div.find_all("div", class_=lambda c:c and "tiles_c1dxwih" in c)
+            cards = (
+                offers_div.select("div.tiles_c1dxwih")
+                if offers_div
+                else []
+            )
+            cards = [
+                card for card in cards
+                if card.select_one("a[data-test='link-offer-title']")
+            ]
             if not cards:
                 break
     
             jobs_this_page = []
-            # build tasks: [(url, container_soup), …]
+    
+            # 3) Build a simple task list of {url, job_id}
             tasks = []
             for card in cards:
-                url = card.select_one("a[data-test='link-offer-title']")["href"]
-                if url.startswith("/"):
-                    url = self.base_url + url
-                
-                if url in processed or "pracodawcy.pracuj.pl/company" in url:
-                    continue
-                processed.add(url)
-                
-                # Just enqueue URL + ID
-                m = re.search(r",oferta,(\d+)", url)
-                job_id = m.group(1) if m else str(hash(url))[:8]
-                tasks.append({"url": url, "job_id": job_id})
-
                 a = card.select_one("a[data-test='link-offer-title']")
-                if not a: 
-                    continue
                 href = a["href"]
                 if href.startswith("/"):
                     href = self.base_url + href
+                # skip duplicates & company‐profile links
                 if href in processed or "pracodawcy.pracuj.pl/company" in href:
                     continue
                 processed.add(href)
     
-                # --- scrape everything from the card ---
-                # ID
                 m = re.search(r",oferta,(\d+)", href)
                 job_id = m.group(1) if m else str(hash(href))[:8]
+                tasks.append({"url": href, "job_id": job_id})
     
-                # Title
-                title = a.get_text(strip=True)
-    
-                # Company
-                comp = card.select_one("h3[data-test='text-company-name']")
-                company = comp.get_text(strip=True) if comp else "Unknown Company"
-    
-                # Salary
-                sal = card.select_one("span[data-test='offer-salary']")
-                salary_min, salary_max = self._extract_salary(sal.get_text(" ",strip=True)) if sal else (None,None)
-    
-                # Location
-                loc = card.select_one("h4[data-test='text-region']")
-                location = loc.get_text(strip=True) if loc else ""
-      
-  
-            # now go off and fetch details in parallel
+            # 4) Fetch detail pages in parallel and parse
             with ThreadPoolExecutor(max_workers=8) as pool:
                 fut2task = {
                     pool.submit(self.get_page_html, t["url"]): t
@@ -418,41 +425,24 @@ class PracujScraper(BaseScraper):
                 for fut in as_completed(fut2task):
                     task = fut2task[fut]
                     detail_html = fut.result(timeout=60)
+    
+                    # Parse every field from the detail page
+                    job = self._parse_job_detail(detail_html, task["url"])
+    
+                    # Extract skills
                     detail_soup = BeautifulSoup(detail_html, "html.parser")
-                
-                    # pull years-of-exp and skills from the detail page
-                    yoe = self._extract_years_of_experience(detail_soup)
                     skills = self._extract_skills_from_listing(detail_soup)
-                
-                    m = task["meta"]
-                    job = JobListing(
-                        job_id   = m["job_id"],
-                        source   = "pracuj.pl",
-                        title    = m["title"],
-                        company  = m["company"],
-                        link     = task["url"],
-                        salary_min       = m["salary_min"],
-                        salary_max       = m["salary_max"],
-                        location         = m["location"],
-                        operating_mode   = m["operating_mode"],
-                        work_type        = m["work_type"],
-                        experience_level = m["experience_level"],
-                        employment_type  = m["employment_type"],
-                        years_of_experience = yoe,
-                        scrape_date=datetime.now(),
-                        listing_status="Active",
-                    )
-                
+    
                     jobs_this_page.append(job)
                     all_skills[job.job_id] = skills
-
     
-            # insert into DB, checkpoint, etc…
+            # 5) Persist & checkpoint
             all_jobs.extend(jobs_this_page)
-            self.save_checkpoint(current_page+1)
+            self.save_checkpoint(current_page + 1)
             current_page += 1
     
         return all_jobs, all_skills
+
 
 def scrape_pracuj():
     """Function to run the pracuj.pl scraper"""
