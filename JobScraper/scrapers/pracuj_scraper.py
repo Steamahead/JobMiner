@@ -162,7 +162,7 @@ class PracujScraper(BaseScraper):
             "salary_max": None,
         }
     
-        # ——— 1) Explicit badge mapping by data-test — no more enumerating the first 4 LIs
+        # 1) Map badges by their exact data-test index
         badge_map = {
             0: "experience_level",   # Specjalista (Mid / Regular)
             1: "work_type",          # Pełny etat
@@ -174,7 +174,7 @@ class PracujScraper(BaseScraper):
             if el:
                 result[field] = el.get_text(strip=True)
     
-        # ——— 2) Scoped fallback for operating_mode — scan only those same badges
+        # 2) Scoped fallback for operating_mode (if empty)
         if not result["operating_mode"]:
             for el in soup.select("li[data-test^='offer-additional-info-']"):
                 txt = el.get_text(strip=True).lower()
@@ -182,21 +182,19 @@ class PracujScraper(BaseScraper):
                     result["operating_mode"] = txt
                     break
     
-        # ——— 3) Location from the dedicated region header
-        #       <h4 data-test="text-region">Warszawa</h4> :contentReference[oaicite:0]{index=0}
+        # 3) Location
         loc = soup.select_one("h4[data-test='text-region']")
         if loc:
             result["location"] = loc.get_text(strip=True)
     
-        # ——— 4) Salary from the offer-salary span
-        #       <span data-test="offer-salary">120–135 zł …</span> :contentReference[oaicite:1]{index=1}
+        # 4) Salary
         sal = soup.select_one("span[data-test='offer-salary']")
         if sal:
             min_sal, max_sal = self._extract_salary(sal.get_text(" ", strip=True))
             result["salary_min"], result["salary_max"] = min_sal, max_sal
     
-        # ——— 5) Truncate to fit your DB
-        for k in ("operating_mode", "work_type", "experience_level", "employment_type"):
+        # 5) Truncate to avoid DB overflows
+        for k in ("experience_level", "work_type", "employment_type", "operating_mode"):
             if result[k]:
                 result[k] = result[k][:50]
     
@@ -324,22 +322,28 @@ class PracujScraper(BaseScraper):
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
     
+        # ——— Job ID (inline regex) ———
+        m = re.search(r",oferta,(\d+)", job_url)
+        if not m:
+            m = re.search(r"/oferta/[^/]+/(\d+)", job_url)
+        job_id = m.group(1) if m else str(hash(job_url))[:8]
+    
         # ——— Title ———
-        # <h2 data-test="offer-title">…<a data-test="link-offer-title">…</a></h2> :contentReference[oaicite:5]{index=5}
         t_el = soup.select_one("h2[data-test='offer-title'] a, h2[data-test='offer-title']")
         title = t_el.get_text(strip=True) if t_el else "Unknown Title"
     
         # ——— Company ———
-        # <div data-test="section-company">…<h3 data-test="text-company-name">BCF Software…</h3>…</div> :contentReference[oaicite:6]{index=6}
-        c_el = soup.select_one("div[data-test='section-company'] h3[data-test='text-company-name']")
+        c_el = soup.select_one(
+            "div[data-test='section-company'] h3[data-test='text-company-name']"
+        )
         company = c_el.get_text(strip=True) if c_el else "Unknown Company"
     
-        # ——— Badges, Location & Salary ———
+        # ——— Badges & meta ———
         badges = self._extract_badge_info(soup)
         yoe    = self._extract_years_of_experience(soup)
     
         return JobListing(
-            job_id= self._extract_id_from_url(job_url),
+            job_id=job_id,
             source="pracuj.pl",
             title=title,
             company=company,
