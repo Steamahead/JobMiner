@@ -152,53 +152,60 @@ class PracujScraper(BaseScraper):
         return None, None
 
     def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, object]:
-        result = {
-            "location": "",
-            "operating_mode": "",
-            "work_type": "",
-            "experience_level": "",
-            "employment_type": "",
-            "salary_min": None,
-            "salary_max": None,
-        }
+            """
+            Pull Location / OperatingMode / WorkType / ExperienceLevel / EmploymentType
+            and SalaryMin / SalaryMax out of the in-offer benefit list and salary section.
+            """
+            result = {
+                "SalaryMin":       None,
+                "SalaryMax":       None,
+                "Location":        "",
+                "OperatingMode":   "",
+                "WorkType":        "",
+                "ExperienceLevel": "",
+                "EmploymentType":  "",
+            }
     
-        # 1) Map badges by their exact data-test index
-        badge_map = {
-            0: "experience_level",   # Specjalista (Mid / Regular)
-            1: "work_type",          # Pełny etat
-            2: "employment_type",    # Kontrakt B2B
-            4: "operating_mode",     # Praca zdalna, Praca hybrydowa
-        }
-        for idx, field in badge_map.items():
-            el = soup.select_one(f"li[data-test='offer-additional-info-{idx}']")
+            # Base selector for each badge in the <ul data-test="sections-benefit-list">
+            base = 'ul[data-test="sections-benefit-list"] li[data-test="{dt}"] div[data-test="offer-badge-title"]'
+    
+            # — Location: office first, else remote —
+            office = soup.select_one(base.format(dt="sections-benefit-workplaces"))
+            remote = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
+            if office:
+                result["Location"] = office.get_text(strip=True)
+            elif remote:
+                result["Location"] = remote.get_text(strip=True)
+    
+            # — EmploymentType (contract) —
+            et = soup.select_one(base.format(dt="sections-benefit-contracts"))
+            if et:
+                result["EmploymentType"] = et.get_text(strip=True)
+    
+            # — WorkType (schedule) —
+            wt = soup.select_one(base.format(dt="sections-benefit-work-schedule"))
+            if wt:
+                result["WorkType"] = wt.get_text(strip=True)
+    
+            # — ExperienceLevel (seniority) —
+            el = soup.select_one(base.format(dt="sections-benefit-employment-type-name"))
             if el:
-                result[field] = el.get_text(strip=True)
+                result["ExperienceLevel"] = el.get_text(strip=True)
     
-        # 2) Scoped fallback for operating_mode (if empty)
-        if not result["operating_mode"]:
-            for el in soup.select("li[data-test^='offer-additional-info-']"):
-                txt = el.get_text(strip=True).lower()
-                if any(x in txt for x in ("zdaln", "hybryd", "stacjon")):
-                    result["operating_mode"] = txt
-                    break
+            # — OperatingMode (remote / hybrid / on-site) —
+            om = soup.select_one(base.format(dt="sections-benefit-work-modes-many"))
+            if om:
+                result["OperatingMode"] = om.get_text(strip=True)
     
-        # 3) Location
-        loc = soup.select_one("h4[data-test='text-region']")
-        if loc:
-            result["location"] = loc.get_text(strip=True)
+            # — Salary —
+            # <div data-test="section-salary">…<div data-test="text-earningAmount">120,00 – 135,00 zł</div>…</div>
+            sal = soup.select_one('div[data-test="section-salary"] div[data-test="text-earningAmount"]')
+            if sal:
+                # reuse your existing salary parser here
+                min_sal, max_sal = self._extract_salary(sal.get_text(" ", strip=True))
+                result["SalaryMin"], result["SalaryMax"] = min_sal, max_sal
     
-        # 4) Salary
-        sal = soup.select_one("span[data-test='offer-salary']")
-        if sal:
-            min_sal, max_sal = self._extract_salary(sal.get_text(" ", strip=True))
-            result["salary_min"], result["salary_max"] = min_sal, max_sal
-    
-        # 5) Truncate to avoid DB overflows
-        for k in ("experience_level", "work_type", "employment_type", "operating_mode"):
-            if result[k]:
-                result[k] = result[k][:50]
-    
-        return result
+            return result
 
     def _extract_skills_from_listing(self, soup: BeautifulSoup) -> List[str]:
         """Extract skills from the dedicated skills section and/or description"""
@@ -279,15 +286,15 @@ class PracujScraper(BaseScraper):
         return mapped_skills
 
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
-        """Extract years of experience from requirements section"""
-        # Try multiple selectors for requirements
-        requirements_section = soup.find(
-            "div",
-            attrs={
-                "data-test": "offer-sub-section",
-                "data-scroll-id": "requirements-expected-1",
-            },
-        )
+        """
+        Finds the first <li class="tkzmjn3">…Min. X lat…</li> and returns X as an integer.
+        """
+        li = soup.select_one("li.tkzmjn3")
+        if not li:
+            return None
+        text = li.get_text(" ", strip=True)
+        m = re.search(r"Min\.\s*(\d+)", text)
+        return int(m.group(1)) if m else None
 
         if not requirements_section:
             # Fallback: search in the entire page text
@@ -321,40 +328,42 @@ class PracujScraper(BaseScraper):
 
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
-    
-        # ——— Job ID (inline regex) ———
+
+        # — Job ID inline —
         m = re.search(r",oferta,(\d+)", job_url)
         if not m:
             m = re.search(r"/oferta/[^/]+/(\d+)", job_url)
         job_id = m.group(1) if m else str(hash(job_url))[:8]
-    
-        # ——— Title ———
-        t_el = soup.select_one("h2[data-test='offer-title'] a, h2[data-test='offer-title']")
-        title = t_el.get_text(strip=True) if t_el else "Unknown Title"
-    
-        # ——— Company ———
-        c_el = soup.select_one(
-            "div[data-test='section-company'] h3[data-test='text-company-name']"
-        )
-        company = c_el.get_text(strip=True) if c_el else "Unknown Company"
-    
-        # ——— Badges & meta ———
+
+        # — Title —
+        # <h1 data-test="text-positionName">Architekt (…) </h1>
+        title_el = soup.select_one("h1[data-test='text-positionName']")
+        title = title_el.get_text(strip=True) if title_el else "Unknown Title"
+
+        # — Company —
+        # <h2 data-test="text-employerName">BCF Software Sp. z o.o.</h2>
+        comp_el = soup.select_one("h2[data-test='text-employerName']")
+        company = comp_el.get_text(strip=True) if comp_el else "Unknown Company"
+
+        # — Badges (Location, contract, schedule, seniority, mode) + Salary —
         badges = self._extract_badge_info(soup)
-        yoe    = self._extract_years_of_experience(soup)
-    
+
+        # — Years of Experience —
+        yoe = self._extract_years_of_experience(soup)
+
         return JobListing(
             job_id=job_id,
             source="pracuj.pl",
             title=title,
             company=company,
             link=job_url,
-            salary_min=badges["salary_min"],
-            salary_max=badges["salary_max"],
-            location=badges["location"],
-            operating_mode=badges["operating_mode"],
-            work_type=badges["work_type"],
-            experience_level=badges["experience_level"],
-            employment_type=badges["employment_type"],
+            salary_min=badges["SalaryMin"],
+            salary_max=badges["SalaryMax"],
+            location=badges["Location"],
+            operating_mode=badges["OperatingMode"],
+            work_type=badges["WorkType"],
+            experience_level=badges["ExperienceLevel"],
+            employment_type=badges["EmploymentType"],
             years_of_experience=yoe,
             scrape_date=datetime.now(),
             listing_status="Active",
