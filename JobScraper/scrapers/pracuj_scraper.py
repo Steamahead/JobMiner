@@ -360,109 +360,125 @@ class PracujScraper(BaseScraper):
             listing_status="Active",
         )
 
-    def scrape(self) -> Tuple[List["JobListing"], Dict[str, List[str]]]:
-        all_job_listings: List[JobListing] = []
-        all_skills_dict: Dict[str, List[str]] = {}
-        successful_db_inserts = 0
-
-        # Get the last saved page, or start at 1
+    def scrape(self) -> Tuple[List[JobListing], Dict[str,List[str]]]:
+        all_jobs = []
+        all_skills = {}
+        processed = set()
         current_page = self.get_last_processed_page()
-        processed_urls: Set[str] = set()
-
+        badge_map = {
+            0: "experience_level",
+            1: "work_type",
+            2: "employment_type",
+            4: "operating_mode",
+        }
+    
         while True:
-            logging.info(f"Processing page {current_page}")
-
-            page_url = (
-                self.search_url
-                if current_page == 1
-                else f"{self.search_url}&pn={current_page}"
-            )
+            page_url = self.search_url if current_page == 1 else f"{self.search_url}&pn={current_page}"
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
-
-            # Collect all job-offer URLs on this page
-            urls = []
-
-            offers_div = soup.find("div", attrs={"data-test": "section-offers"})
-            if offers_div:
-                job_containers = offers_div.find_all("article") or offers_div.find_all("div", recursive=False)
-            else:
-                logging.warning(f"No 'section-offers' on page {current_page}")
-                job_containers = (
-                    soup.select("#offers-list > div.listing_b1i2dnp8 > div.listing_ohw4t83")
-                    or soup.select("div.listing_ohw4t83")
-                    or soup.find_all("div", class_=lambda c: c and "listing_" in c)
-                )
-
-            job_containers = [
-                c for c in job_containers
-                if not c.find('h2', text=re.compile(r'Oferty z innych lokalizacji', re.I))
-            ]
-
-            link_selector = "a[data-test='link-offer-title'][href], a.tiles_o1859gd9[href]"
-            for container in job_containers:
-                link = container.select_one(link_selector)
-                if not link:
+    
+            offers_div = soup.select_one("div[data-test='section-offers']")
+            cards = offers_div and offers_div.find_all("div", class_=lambda c:c and "tiles_c1dxwih" in c)
+            if not cards:
+                break
+    
+            jobs_this_page = []
+            # build tasks: [(url, container_soup), …]
+            tasks = []
+            for card in cards:
+                a = card.select_one("a[data-test='link-offer-title']")
+                if not a: 
                     continue
-                href = link.get("href", "")
-                if "oferta" not in href:
-                    continue
-
-                if "pracodawcy.pracuj.pl/company" in href:
-                    continue
-
+                href = a["href"]
                 if href.startswith("/"):
                     href = self.base_url + href
-
-                if href not in processed_urls:
-                    urls.append(href)
-                    processed_urls.add(href)
-
-            logging.info(f"Found {len(urls)} job URLs on page {current_page}")
-
-            # If this page has zero new URLs, we assume we've reached the end:
-            if not urls:
-                logging.info(f"No more jobs on page {current_page}. Stopping pagination.")
-                break
-
-            # Process each detail page in parallel
-            page_listings = []
+                if href in processed or "pracodawcy.pracuj.pl/company" in href:
+                    continue
+                processed.add(href)
+    
+                # --- scrape everything from the card ---
+                # ID
+                m = re.search(r",oferta,(\d+)", href)
+                job_id = m.group(1) if m else str(hash(href))[:8]
+    
+                # Title
+                title = a.get_text(strip=True)
+    
+                # Company
+                comp = card.select_one("h3[data-test='text-company-name']")
+                company = comp.get_text(strip=True) if comp else "Unknown Company"
+    
+                # Salary
+                sal = card.select_one("span[data-test='offer-salary']")
+                salary_min, salary_max = self._extract_salary(sal.get_text(" ",strip=True)) if sal else (None,None)
+    
+                # Location
+                loc = card.select_one("h4[data-test='text-region']")
+                location = loc.get_text(strip=True) if loc else ""
+    
+                # Badges
+                badges = {}
+                for idx, field in badge_map.items():
+                    li = card.select_one(f"li[data-test='offer-additional-info-{idx}']")
+                    badges[field] = li.get_text(strip=True) if li else ""
+    
+                # enqueue detail‐page fetch
+                tasks.append({
+                    "url": href,
+                    "meta": {
+                        "job_id": job_id,
+                        "title": title,
+                        "company": company,
+                        "salary_min": salary_min,
+                        "salary_max": salary_max,
+                        "location": location,
+                        **badges
+                    }
+                })
+    
+            # now go off and fetch details in parallel
             with ThreadPoolExecutor(max_workers=8) as pool:
-                fut2url = {pool.submit(self.get_page_html, u): u for u in urls}
-                for fut in as_completed(fut2url):
-                    u = fut2url[fut]
-                    try:
-                        detail_html = fut.result(timeout=60)
-                        job_listing = self._parse_job_detail(detail_html, u)
-                        page_listings.append(job_listing)
-
-                        detail_soup = BeautifulSoup(detail_html, "html.parser")
-                        skills = self._extract_skills_from_listing(detail_soup)
-                        all_skills_dict[job_listing.job_id] = skills
-                    except Exception as ex:
-                        logging.error(f"Error parsing {u}: {ex}")
-
-            # Insert job listings
-            for job in page_listings:
-                if insert_job_listing(job):
-                    successful_db_inserts += 1
-
-            all_job_listings.extend(page_listings)
-            logging.info(f"Processed {len(page_listings)} jobs on page {current_page}")
-
-            # Save a checkpoint so we can resume if it crashes
-            self.save_checkpoint(current_page + 1)
-
-            # Throttle a bit before next page
-            time.sleep(random.uniform(2, 4))
+                fut2task = {
+                    pool.submit(self.get_page_html, t["url"]): t
+                    for t in tasks
+                }
+                for fut in as_completed(fut2task):
+                    task = fut2task[fut]
+                    detail_html = fut.result(timeout=60)
+                    detail_soup = BeautifulSoup(detail_html, "html.parser")
+    
+                    # pull years-of-exp and skills from the detail page
+                    yoe = self._extract_years_of_experience(detail_soup)
+                    skills = self._extract_skills_from_listing(detail_soup)
+    
+                    m = task["meta"]
+                    job = JobListing(
+                        job_id   = m["job_id"],
+                        source   = "pracuj.pl",
+                        title    = m["title"],
+                        company  = m["company"],
+                        link     = task["url"],
+                        salary_min       = m["salary_min"],
+                        salary_max       = m["salary_max"],
+                        location         = m["location"],
+                        operating_mode   = m["operating_mode"],
+                        work_type        = m["work_type"],
+                        experience_level = m["experience_level"],
+                        employment_type  = m["employment_type"],
+                        years_of_experience = yoe,
+                        scrape_date=datetime.now(),
+                        listing_status="Active",
+                    )
+    
+                    jobs_this_page.append(job)
+                    all_skills[job.job_id] = skills
+    
+            # insert into DB, checkpoint, etc…
+            all_jobs.extend(jobs_this_page)
+            self.save_checkpoint(current_page+1)
             current_page += 1
-
-        logging.info(
-            f"Scrape complete: {len(all_job_listings)} jobs processed, "
-            f"{successful_db_inserts} new inserts."
-        )
-        return all_job_listings, all_skills_dict
-
+    
+        return all_jobs, all_skills
 
 def scrape_pracuj():
     """Function to run the pracuj.pl scraper"""
