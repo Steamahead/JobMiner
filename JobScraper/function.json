@@ -3,8 +3,8 @@
     {
       "type": "timerTrigger",
       "name": "mytimer",
-      // local Warsaw time: at 4:00 and 4:13 AM
-      "schedule": "0 0,13 4 * * *"
+      // local Warsaw time: at 4:00, 4:20, and 4:25 AM
+      "schedule": "0 0,20,25 4 * * *"
     }
   ]
 }
