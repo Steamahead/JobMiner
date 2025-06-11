@@ -265,60 +265,25 @@ class PracujScraper(BaseScraper):
 
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """
-        Extract required years of experience by scanning all <li class="tkzmjn3"> items,
-        then falling back to the whole page if none match in the list.
+        Grab the first integer 1–12 from any <li class="tkzmjn3"> item,
+        else from the full page text.
         """
-        lis = soup.select("li.tkzmjn3") or []
-
-        # 1) Scan each <li> for the most common patterns in order:
-        for li in lis:
-            text = li.get_text(" ", strip=True).lower()
-
-            # a) Hyphen ranges: "1-3 years", "3-4 letnim doświadczeniem"
-            m = re.search(r"(\d+)[-–]\s*(\d+)", text)
+        # 1) Scan each bullet for any standalone number 1–12
+        for li in soup.select("li.tkzmjn3") or []:
+            text = li.get_text(" ", strip=True)
+            m = re.search(r"\b([1-9]|1[0-2])\b", text)
             if m:
                 return int(m.group(1))
 
-            # b) Plus-signs: "3+ years of experience"
-            m = re.search(r"(\d+)\+", text)
-            if m:
-                return int(m.group(1))
+        # 2) Fallback: scan the entire page
+        page_text = soup.get_text(" ", strip=True)
+        m = re.search(r"\b([1-9]|1[0-2])\b", page_text)
+        if m:
+            return int(m.group(1))
 
-            # c) Min / Minimum: "Min. 1 roku doświadczenia", "Minimum 1-3 years"
-            m = re.search(r"min(?:\.|imum)?\s*(\d+)", text)
-            if m:
-                return int(m.group(1))
-
-            # d) Polish "rok"/"lat": "5 lat doświadczenia", "1 roku doświadczenia"
-            m = re.search(r"(\d+)\s*rok\w*", text)
-            if m:
-                return int(m.group(1))
-            m = re.search(r"(\d+)\s*lat\w*", text)
-            if m:
-                return int(m.group(1))
-
-            # e) Specific Polish phrasing: "letnim doświadczeniem"
-            m = re.search(r"(\d+)[-–]\s*(\d+)\s*letnim\s*doświadczeniem", text)
-            if m:
-                return int(m.group(1))
-
-        # 2) Fallback: scan the entire page text
-        page_text = soup.get_text(" ", strip=True).lower()
-        fallback_patterns = [
-            r"(\d+)[-–]\s*(\d+)",
-            r"(\d+)\+",
-            r"min(?:\.|imum)?\s*(\d+)",
-            r"(\d+)\s*rok\w*",
-            r"(\d+)\s*lat\w*",
-            r"(\d+)[-–]\s*(\d+)\s*letnim\s*doświadczeniem",
-        ]
-        for pat in fallback_patterns:
-            m = re.search(pat, page_text)
-            if m:
-                return int(m.group(1))
-
-        # 3) No match found
+        # 3) Nothing found
         return None
+
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
@@ -377,25 +342,26 @@ class PracujScraper(BaseScraper):
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
     
-            # 2) Find all job cards, skipping the “Oferty z innych lokalizacji” banner
-            offers_div = soup.select_one("div[data-test='section-offers']")
-            if not offers_div:
+            # 2) Gather every job-offer link, ignoring the banner entirely
+            offer_links = soup.select("div[data-test='section-offers'] a[data-test='link-offer-title']")
+            if not offer_links:
                 break
         
-            cards = []
-            # iterate direct children so we see banner in order
-            for element in offers_div.find_all(recursive=False):
-                # skip that banner ad
-                if element.select_one("div[data-test='range-box-section-title']"):
-                    continue
-                # only keep genuine job cards with a title link
-                link = element.select_one("a[data-test='link-offer-title']")
-                if not link:
-                    continue
-                cards.append(element)
+            # 3) Build tasks from each link found
+            tasks = []
+            for a in offer_links:
+                href = a["href"]
+                if href.startswith("/"):
+                    href = self.base_url + href
         
-            if not cards:
-                break
+                # skip duplicates & employer-profile links
+                if href in processed or "pracodawcy.pracuj.pl/company" in href:
+                    continue
+                processed.add(href)
+        
+                m = re.search(r",oferta,(\d+)", href)
+                job_id = m.group(1) if m else str(hash(href))[:8]
+                tasks.append({"url": href, "job_id": job_id})
     
             jobs_this_page = []
     
