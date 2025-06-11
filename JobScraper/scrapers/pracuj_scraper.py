@@ -86,29 +86,6 @@ class PracujScraper(BaseScraper):
             ],
         }
 
-    def get_last_processed_page(self):
-        """Retrieve the last processed page from a local file"""
-        try:
-            checkpoint_path = os.path.join(tempfile.gettempdir(), "pracuj_checkpoint.txt")
-            if os.path.exists(checkpoint_path):
-                with open(checkpoint_path, "r") as f:
-                    checkpoint_data = f.read().strip()
-                    return int(checkpoint_data)
-            return 1
-        except Exception as e:
-            logging.warning(f"Failed to retrieve checkpoint: {str(e)}")
-            return 1
-
-    def save_checkpoint(self, page_number):
-        """Save the current page as a checkpoint to a local file"""
-        try:
-            checkpoint_path = os.path.join(tempfile.gettempdir(), "pracuj_checkpoint.txt")
-            with open(checkpoint_path, "w") as f:
-                f.write(str(page_number))
-            logging.info(f"Saved checkpoint for page {page_number}")
-        except Exception as e:
-            logging.error(f"Failed to save checkpoint: {str(e)}")
-
     def _extract_salary(self, salary_text: str) -> Tuple[Optional[int], Optional[int]]:
         """Extract min and max salary from salary text, handling hourly rates"""
         if not salary_text:
@@ -288,45 +265,61 @@ class PracujScraper(BaseScraper):
 
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """
-        Finds the first <li class="tkzmjn3">…Min. X lat…</li> and returns X as an integer.
+        Extract required years of experience by scanning all <li class="tkzmjn3"> items,
+        then falling back to the whole page if none match in the list.
         """
-        li = soup.select_one("li.tkzmjn3")
-        if not li:
-            return None
-        text = li.get_text(" ", strip=True)
-        m = re.search(r"Min\.\s*(\d+)", text)
-        return int(m.group(1)) if m else None
+        lis = soup.select("li.tkzmjn3") or []
 
-        if not requirements_section:
-            # Fallback: search in the entire page text
-            page_text = soup.get_text().lower()
-        else:
-            page_text = requirements_section.get_text(strip=True).lower()
+        # 1) Scan each <li> for the most common patterns in order:
+        for li in lis:
+            text = li.get_text(" ", strip=True).lower()
 
-        patterns = [
-            # Polish patterns
-            r"(\d+)\s*rok\w*\s*doświadczeni",
-            r"(\d+)\s*lat\w*\s*doświadczeni",
-            r"doświadczeni\w*\s*(\d+)\s*rok",
-            r"doświadczeni\w*\s*(\d+)\s*lat",
-            r"min[.:]?\s*(\d+)\s*rok\w*\s*doświadczeni",
-            r"min[.:]?\s*(\d+)\s*lat\w*\s*doświadczeni",
-            # English patterns
-            r"(\d+)\s*year\w*\s*experience",
-            r"experience\s*of\s*(\d+)\s*year",
-            r"min[.:]?\s*(\d+)\s*year\w*\s*experience",
+            # a) Hyphen ranges: "1-3 years", "3-4 letnim doświadczeniem"
+            m = re.search(r"(\d+)[-–]\s*(\d+)", text)
+            if m:
+                return int(m.group(1))
+
+            # b) Plus-signs: "3+ years of experience"
+            m = re.search(r"(\d+)\+", text)
+            if m:
+                return int(m.group(1))
+
+            # c) Min / Minimum: "Min. 1 roku doświadczenia", "Minimum 1-3 years"
+            m = re.search(r"min(?:\.|imum)?\s*(\d+)", text)
+            if m:
+                return int(m.group(1))
+
+            # d) Polish "rok"/"lat": "5 lat doświadczenia", "1 roku doświadczenia"
+            m = re.search(r"(\d+)\s*rok\w*", text)
+            if m:
+                return int(m.group(1))
+            m = re.search(r"(\d+)\s*lat\w*", text)
+            if m:
+                return int(m.group(1))
+
+            # e) Specific Polish phrasing: "letnim doświadczeniem"
+            m = re.search(r"(\d+)[-–]\s*(\d+)\s*letnim\s*doświadczeniem", text)
+            if m:
+                return int(m.group(1))
+
+        # 2) Fallback: scan the entire page text
+        page_text = soup.get_text(" ", strip=True).lower()
+        fallback_patterns = [
+            r"(\d+)[-–]\s*(\d+)",
+            r"(\d+)\+",
+            r"min(?:\.|imum)?\s*(\d+)",
+            r"(\d+)\s*rok\w*",
+            r"(\d+)\s*lat\w*",
+            r"(\d+)[-–]\s*(\d+)\s*letnim\s*doświadczeniem",
         ]
+        for pat in fallback_patterns:
+            m = re.search(pat, page_text)
+            if m:
+                return int(m.group(1))
 
-        for pattern in patterns:
-            match = re.search(pattern, page_text)
-            if match:
-                try:
-                    return int(match.group(1))
-                except (ValueError, IndexError):
-                    pass
-
+        # 3) No match found
         return None
-
+        
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
     
@@ -372,7 +365,7 @@ class PracujScraper(BaseScraper):
         all_jobs = []
         all_skills = {}
         processed = set()
-        current_page = self.get_last_processed_page()
+        current_page = 1
     
         while True:
             # 1) Fetch search results page
@@ -384,17 +377,23 @@ class PracujScraper(BaseScraper):
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
     
-            # 2) Find all job cards that actually have a link
+            # 2) Find all job cards, skipping the “Oferty z innych lokalizacji” banner
             offers_div = soup.select_one("div[data-test='section-offers']")
-            cards = (
-                offers_div.select("div.tiles_c1dxwih")
-                if offers_div
-                else []
-            )
-            cards = [
-                card for card in cards
-                if card.select_one("a[data-test='link-offer-title']")
-            ]
+            if not offers_div:
+                break
+        
+            cards = []
+            # iterate direct children so we see banner in order
+            for element in offers_div.find_all(recursive=False):
+                # skip that banner ad
+                if element.select_one("div[data-test='range-box-section-title']"):
+                    continue
+                # only keep genuine job cards with a title link
+                link = element.select_one("a[data-test='link-offer-title']")
+                if not link:
+                    continue
+                cards.append(element)
+        
             if not cards:
                 break
     
@@ -436,11 +435,10 @@ class PracujScraper(BaseScraper):
                     jobs_this_page.append(job)
                     all_skills[job.job_id] = skills
     
-            # 5) Persist & checkpoint
+            # 5) Persist
             all_jobs.extend(jobs_this_page)
-            self.save_checkpoint(current_page + 1)
             current_page += 1
-    
+   
         return all_jobs, all_skills
 
 
