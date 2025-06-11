@@ -343,7 +343,9 @@ class PracujScraper(BaseScraper):
             soup = BeautifulSoup(html, "html.parser")
     
             # 2) Gather every job-offer link, ignoring the banner entirely
-            offer_links = soup.select("div[data-test='section-offers'] a[data-test='link-offer-title']")
+            offer_links = soup.select(
+                "div[data-test='section-offers'] a[data-test='link-offer-title']"
+            )
             if not offer_links:
                 break
         
@@ -362,25 +364,9 @@ class PracujScraper(BaseScraper):
                 m = re.search(r",oferta,(\d+)", href)
                 job_id = m.group(1) if m else str(hash(href))[:8]
                 tasks.append({"url": href, "job_id": job_id})
-    
+        
             jobs_this_page = []
-    
-            # 3) Build a simple task list of {url, job_id}
-            tasks = []
-            for card in cards:
-                a = card.select_one("a[data-test='link-offer-title']")
-                href = a["href"]
-                if href.startswith("/"):
-                    href = self.base_url + href
-                # skip duplicates & company‐profile links
-                if href in processed or "pracodawcy.pracuj.pl/company" in href:
-                    continue
-                processed.add(href)
-    
-                m = re.search(r",oferta,(\d+)", href)
-                job_id = m.group(1) if m else str(hash(href))[:8]
-                tasks.append({"url": href, "job_id": job_id})
-    
+        
             # 4) Fetch detail pages in parallel and parse
             with ThreadPoolExecutor(max_workers=8) as pool:
                 fut2task = {
@@ -388,7 +374,7 @@ class PracujScraper(BaseScraper):
                     for t in tasks
                 }
                 for fut in as_completed(fut2task):
-                    task = fut2task[fut]
+                                task = fut2task[fut]
                     detail_html = fut.result(timeout=60)
     
                     # Parse every field from the detail page
