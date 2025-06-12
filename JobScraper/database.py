@@ -75,7 +75,6 @@ def create_tables_if_not_exist():
                 YearsOfExperience INT NULL,
                 ScrapeDate DATETIME NOT NULL,
                 ListingStatus NVARCHAR(20) NOT NULL,
-                PublishedDate DATETIME NULL,
                 CONSTRAINT UC_JobListing UNIQUE (JobID, Source)
             )
         END
@@ -147,7 +146,6 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
         job.years_of_experience,
         job.scrape_date,
         _truncate(job.listing_status, 20),
-        job.published_date,
     )
 
     cur.execute(
@@ -156,8 +154,8 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
             JobID, Source, Title, Company, Link,
             SalaryMin, SalaryMax, Location,
             OperatingMode, WorkType, ExperienceLevel, EmploymentType,
-            YearsOfExperience, ScrapeDate, ListingStatus, PublishedDate
-        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+            YearsOfExperience, ScrapeDate, ListingStatus
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
         SELECT SCOPE_IDENTITY();
     """,
         params,
