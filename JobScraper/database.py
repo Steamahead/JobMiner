@@ -155,8 +155,8 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
             JobID, Source, Title, Company, Link,
             SalaryMin, SalaryMax, Location,
             OperatingMode, WorkType, ExperienceLevel, EmploymentType,
-            YearsOfExperience, ScrapeDate, ListingStatus
-        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+            YearsOfExperience, ScrapeDate, ListingStatus, PublishedDate
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
         SELECT SCOPE_IDENTITY();
     """,
         params,
