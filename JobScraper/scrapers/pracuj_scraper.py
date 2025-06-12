@@ -1,8 +1,10 @@
-import logging
+import logging, re, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import re
-import time
-from typing import List, Dict, Tuple, Set, Optional, Union
+from urllib.parse import urljoin            # <- add
+from bs4 import BeautifulSoup
+from datetime import datetime
+from typing import List, Dict, Tuple, Set, Optional
+
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -359,9 +361,10 @@ class PracujScraper(BaseScraper):
 
             tasks = []
             for a in offer_links:
-                href = a.get("href", "")
+                href = a["href"]
                 if href.startswith("/"):
-                    href = urljoin(self.search_url, href)
+                    href = urljoin(self.search_url, href)   # not self.base_url + href
+
 
                 if href in processed or "pracodawcy.pracuj.pl/company" in href:
                     continue
