@@ -19,6 +19,7 @@ class JobListing:
     employment_type: str         # B2B, Contract, etc.
     years_of_experience: Optional[int]  # Required years of experience
     scrape_date: datetime        # When this listing was scraped
+    published_date: Optional[datetime] = None  # When the job was originally posted
     listing_status: str          # Active/Expired
     short_id: Optional[int] = None
 
