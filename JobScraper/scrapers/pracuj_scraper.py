@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Set, Optional, Union
+from typing import List, Dict, Tuple, Set, Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -326,29 +326,7 @@ class PracujScraper(BaseScraper):
         # <h2 data-test="text-employerName">…</h2>
         c = soup.select_one("h2[data-test='text-employerName']")
         company = c.get_text(strip=True) if c else "Unknown Company"
-
-        # — Published date —
-        pub_tag = soup.select_one("p[data-test='text-added']")
-        published_date = None
-        if pub_tag:
-            # raw text like "Opublikowana: 11 czerwca 2025"
-            raw = pub_tag.get_text(" ", strip=True)
-            # extract day, Polish month name, year
-            m = re.search(r"(\d{1,2})\s+([^\d\s]+)\s+(\d{4})", raw)
-            if m:
-                day, month_pl, year = m.groups()
-                # map Polish month names to numbers
-                month_map = {
-                    "stycznia":1, "lutego":2, "marca":3, "kwietnia":4,
-                    "maja":5, "czerwca":6, "lipca":7, "sierpnia":8,
-                    "września":9, "października":10, "listopada":11, "grudnia":12
-                }
-                mon = month_map.get(month_pl.lower())
-                if mon:
-                    published_date = datetime(
-                        year=int(year), month=mon, day=int(day)
-                    )
-        
+    
         # — Badges / Salary / Location —
         badges = self._extract_badge_info(soup)
     
@@ -370,7 +348,6 @@ class PracujScraper(BaseScraper):
             employment_type=badges["EmploymentType"],
             years_of_experience=yoe,
             scrape_date=datetime.now(),
-            published_date=published_date,
             listing_status="Active",
         )
 
