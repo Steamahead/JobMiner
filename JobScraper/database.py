@@ -147,6 +147,7 @@ def insert_job_listing(job: JobListing) -> Optional[int]:
         job.years_of_experience,
         job.scrape_date,
         _truncate(job.listing_status, 20),
+        job.published_date,
     )
 
     cur.execute(
