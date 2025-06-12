@@ -4,7 +4,7 @@
       "type": "timerTrigger",
       "name": "mytimer",
       // local Warsaw time: at 19:45 (7:45 PM)
-      "schedule": "0 5 5 * * *"
+      "schedule": "0 50 5 * * *"
     }
   ]
 }
