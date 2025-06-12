@@ -75,6 +75,7 @@ def create_tables_if_not_exist():
                 YearsOfExperience INT NULL,
                 ScrapeDate DATETIME NOT NULL,
                 ListingStatus NVARCHAR(20) NOT NULL,
+                PublishedDate DATETIME NULL,
                 CONSTRAINT UC_JobListing UNIQUE (JobID, Source)
             )
         END
