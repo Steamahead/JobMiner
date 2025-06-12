@@ -265,25 +265,17 @@ class PracujScraper(BaseScraper):
 
     def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """
-        Grab the first integer 1–12 from any <li class="tkzmjn3"> item,
-        else from the full page text.
+        Grab the first integer 1–5 from any <li class="tkzmjn3"> item.
+        Return None if no 1–5 is found.
         """
-        # 1) Scan each bullet for any standalone number 1–12
-        for li in soup.select("li.tkzmjn3") or []:
+        for li in soup.select("li.tkzmjn3"):
             text = li.get_text(" ", strip=True)
-            m = re.search(r"\b([1-9]|1[0-2])\b", text)
+            m = re.search(r"\b([1-5])\b", text)
             if m:
                 return int(m.group(1))
 
-        # 2) Fallback: scan the entire page
-        page_text = soup.get_text(" ", strip=True)
-        m = re.search(r"\b([1-9]|1[0-2])\b", page_text)
-        if m:
-            return int(m.group(1))
-
-        # 3) Nothing found
+        # No valid 1–5 in any bullet → None
         return None
-
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
