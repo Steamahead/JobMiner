@@ -145,7 +145,7 @@ class PracujScraper(BaseScraper):
         }
     
         base = 'ul[data-test="sections-benefit-list"] li[data-test="{dt}"] div[data-test="offer-badge-title"]'
-    
+
         # Location: office first, else remote
         off = soup.select_one(base.format(dt="sections-benefit-workplaces"))
         wp  = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
@@ -287,31 +287,35 @@ class PracujScraper(BaseScraper):
         # No valid 1–5 in any bullet → None
         return None
         
-    def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
+    def _parse_job_detail(self, html: str, job_url: str) -> Optional[JobListing]:
+        # 1) Warn if the raw HTML is missing the employer-name tag
+        if not html or "<h2 data-test='text-employerName'" not in html:
+            self.logger.warning(
+                f"No employer-name block in response for {job_url}: {html[:200]!r}"
+            )
+    
         soup = BeautifulSoup(html, "html.parser")
     
-        # — ID inline —
+        # 2) Job ID
         m = re.search(r",oferta,(\d+)", job_url)
         job_id = m.group(1) if m else str(hash(job_url))[:8]
     
-        # — Title —
-        # <h1 data-test="text-positionName">…</h1>
+        # 3) Title
         t = soup.select_one("h1[data-test='text-positionName']")
         title = t.get_text(strip=True) if t else "Unknown Title"
     
+        # 4) Company
         c = soup.select_one("h2[data-test='text-employerName']")
-        if c:
-            # take only the direct text node (the first NavigableString)
-            company = c.find(text=True, recursive=False).strip()
-        else:
-            company = "Unknown Company"
-
-            # — Badges / Salary / Location —
+        if not c:
+            self.logger.warning(f"Parser saw no <h2 data-test='text-employerName'> for {job_url}")
+        company = c.find(text=True, recursive=False).strip() if c else "Unknown Company"
+    
+        # 5) Badges / Salary / Location
         badges = self._extract_badge_info(soup)
     
-        # — Years of Experience —
+        # 6) Years of Experience
         yoe = self._extract_years_of_experience(soup)
-    
+        
         return JobListing(
             job_id=job_id,
             source="pracuj.pl",
