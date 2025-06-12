@@ -299,11 +299,10 @@ class PracujScraper(BaseScraper):
         t = soup.select_one("h1[data-test='text-positionName']")
         title = t.get_text(strip=True) if t else "Unknown Title"
     
-        # — Company —
-        # <h2 data-test="text-employerName">…</h2>
         c = soup.select_one("h2[data-test='text-employerName']")
         if c:
-            company = "".join(c.find_all(text=True, recursive=False)).strip()
+            # take only the direct text node (the first NavigableString)
+            company = c.find(text=True, recursive=False).strip()
         else:
             company = "Unknown Company"
 
