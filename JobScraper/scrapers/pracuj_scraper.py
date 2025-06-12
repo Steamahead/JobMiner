@@ -331,7 +331,7 @@ class PracujScraper(BaseScraper):
         all_skills = {}
         processed = set()
         current_page = 1
-    
+
         while True:
             # 1) Fetch search results page
             page_url = (
@@ -341,32 +341,32 @@ class PracujScraper(BaseScraper):
             )
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
-    
+
             # 2) Gather every job-offer link, ignoring the banner entirely
             offer_links = soup.select(
                 "div[data-test='section-offers'] a[data-test='link-offer-title']"
             )
             if not offer_links:
                 break
-        
+
             # 3) Build tasks from each link found
             tasks = []
             for a in offer_links:
                 href = a["href"]
                 if href.startswith("/"):
                     href = self.base_url + href
-        
+
                 # skip duplicates & employer-profile links
                 if href in processed or "pracodawcy.pracuj.pl/company" in href:
                     continue
                 processed.add(href)
-        
+
                 m = re.search(r",oferta,(\d+)", href)
                 job_id = m.group(1) if m else str(hash(href))[:8]
                 tasks.append({"url": href, "job_id": job_id})
-        
+
             jobs_this_page = []
-        
+
             # 4) Fetch detail pages in parallel and parse
             with ThreadPoolExecutor(max_workers=8) as pool:
                 fut2task = {
@@ -374,23 +374,23 @@ class PracujScraper(BaseScraper):
                     for t in tasks
                 }
                 for fut in as_completed(fut2task):
-                                task = fut2task[fut]
+                    task = fut2task[fut]
                     detail_html = fut.result(timeout=60)
-    
+
                     # Parse every field from the detail page
                     job = self._parse_job_detail(detail_html, task["url"])
-    
+
                     # Extract skills
                     detail_soup = BeautifulSoup(detail_html, "html.parser")
                     skills = self._extract_skills_from_listing(detail_soup)
-    
+
                     jobs_this_page.append(job)
                     all_skills[job.job_id] = skills
-    
-            # 5) Persist
+
+            # 5) Persist & next page
             all_jobs.extend(jobs_this_page)
             current_page += 1
-   
+
         return all_jobs, all_skills
 
 
