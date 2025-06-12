@@ -4,7 +4,7 @@
       "type": "timerTrigger",
       "name": "mytimer",
 
-      "schedule": "0 52 12 * * *"
+      "schedule": "0 39 18 * * *"
     }
   ]
 }
