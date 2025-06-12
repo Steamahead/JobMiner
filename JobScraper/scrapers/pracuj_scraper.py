@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Set, Optional
+from typing import List, Dict, Tuple, Set, Optional, Union
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
