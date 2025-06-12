@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Set, Optional, Union
+from typing import List, Dict, Tuple, Set, Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -265,7 +265,7 @@ class PracujScraper(BaseScraper):
 
     def _extract_years_of_experience(
         self, soup: BeautifulSoup
-    ) -> Optional[Union[int, str]]:
+    ) -> Optional[int]:
         """
         1) Look only in the requirements bullets for any phrasing of years:
            - Polish “kilkuletnie” / “wieloletnie” → “several years”
@@ -283,31 +283,29 @@ class PracujScraper(BaseScraper):
         for li in bullets:
             text = li.get_text(" ", strip=True).lower()
 
-            # a) Textual “several years”
-            if "kilkuletn" in text or "wieloletn" in text:
-                return "several years"
-
-            # b) Hyphen ranges (PL/EN)
-            if m := re.search(r"\b([1-9]|1[0-2])[-–]\s*(?:[1-9]|1[0-2])", text):
+            # 1) Hyphen ranges: "3-5 letnim doświadczeniem" or "1–3 years"
+            if m := re.search(r"\b([1-9]|1[0-2])[-–]\s*(?:[1-9]|1[0-2])\b", text):
                 return int(m.group(1))
 
-            # c) Plus-signs (EN)
-            if m := re.search(r"\b([1-9]|1[0-2])\+\s*years?\b", text):
+            # 2) Plus-signs: "3+ years of experience"
+            if m := re.search(r"\b([1-9]|1[0-2])\+\b", text):
                 return int(m.group(1))
 
-            # d) “Min.” / “Minimum” with years keyword
+            # 3) Min/Minimum + keyword: "Min. 2 lat doświadczenia" or "Minimum 1 year"
             if m := re.search(
-                r"\bmin(?:\.|imum)?\s*([1-9]|1[0-2])\b.*(?:rok|lat|years?)", text
+                r"\bmin(?:\.|imum)?\s*([1-9]|1[0-2])\b.*(?:rok|lat|year)s?\b",
+                text
             ):
                 return int(m.group(1))
 
-            # e) Plain integer + keyword (PL/EN)
+            # 4) Plain integer + keyword: "5 lat doświadczenia" or "4 years"
             if m := re.search(
-                r"\b([1-9]|1[0-2])\s*(?:lat\w*|rok\w*|years?)\b", text
+                r"\b([1-9]|1[0-2])\s*(?:lat\w*|rok\w*|years?)\b",
+                text
             ):
                 return int(m.group(1))
 
-        # No valid “years of experience” phrasing found
+        # If nothing matched, return None (no more fallback)
         return None
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
