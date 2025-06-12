@@ -263,50 +263,27 @@ class PracujScraper(BaseScraper):
 
         return mapped_skills
 
-    def _extract_years_of_experience(
-        self, soup: BeautifulSoup
-    ) -> Optional[int]:
+    def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """
-        1) Look only in the requirements bullets for any phrasing of years:
-           - Polish “kilkuletnie” / “wieloletnie” → “several years”
-           - Numeric ranges (e.g. “3-5 letnim doświadczeniem”, “1–3 years”)
-           - Plus-signs (e.g. “3+ years of experience”)
-           - Min/Minimum (in PL/EN) followed by years keyword
-           - Plain integer + keyword (e.g. “5 lat doświadczenia”, “4 years”)
-        2) If none found, return None.
+        Grab the first integer 1–12 from any <li class="tkzmjn3"> item,
+        else from the full page text.
         """
-        # Select only the real requirement bullet list
-        bullets = soup.select(
-            "ul[data-test='aggregate-bullet-model'] li.tkzmjn3"
-        ) or []
-
-        for li in bullets:
-            text = li.get_text(" ", strip=True).lower()
-
-            # 1) Hyphen ranges: "3-5 letnim doświadczeniem" or "1–3 years"
-            if m := re.search(r"\b([1-9]|1[0-2])[-–]\s*(?:[1-9]|1[0-2])\b", text):
+        # 1) Scan each bullet for any standalone number 1–12
+        for li in soup.select("li.tkzmjn3") or []:
+            text = li.get_text(" ", strip=True)
+            m = re.search(r"\b([1-9]|1[0-2])\b", text)
+            if m:
                 return int(m.group(1))
 
-            # 2) Plus-signs: "3+ years of experience"
-            if m := re.search(r"\b([1-9]|1[0-2])\+\b", text):
-                return int(m.group(1))
+        # 2) Fallback: scan the entire page
+        page_text = soup.get_text(" ", strip=True)
+        m = re.search(r"\b([1-9]|1[0-2])\b", page_text)
+        if m:
+            return int(m.group(1))
 
-            # 3) Min/Minimum + keyword: "Min. 2 lat doświadczenia" or "Minimum 1 year"
-            if m := re.search(
-                r"\bmin(?:\.|imum)?\s*([1-9]|1[0-2])\b.*(?:rok|lat|year)s?\b",
-                text
-            ):
-                return int(m.group(1))
-
-            # 4) Plain integer + keyword: "5 lat doświadczenia" or "4 years"
-            if m := re.search(
-                r"\b([1-9]|1[0-2])\s*(?:lat\w*|rok\w*|years?)\b",
-                text
-            ):
-                return int(m.group(1))
-
-        # If nothing matched, return None (no more fallback)
+        # 3) Nothing found
         return None
+
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
