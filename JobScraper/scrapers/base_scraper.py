@@ -76,17 +76,15 @@ class BaseScraper(ABC):
         retries = 0
         while retries < max_retries:
             try:
-                _wait_for_slot()                                # throttle
-                time.sleep(random.uniform(0, base_delay))       # per-thread jitter
+                _wait_for_slot()
+                time.sleep(random.uniform(0, base_delay))
     
                 resp = self.session.get(url, headers=self.headers, timeout=15)
-                # treat 429 as retryable
                 if resp.status_code == 429:
                     raise ValueError("HTTP 429")
                 text = resp.text or ""
     
                 # Only treat detail pages as retryable stubs
-                # (Pracuj detail URLs always contain ",oferta,")
                 if ",oferta," in url:
                     if len(text) < 2000 or "nie wspieramy" in text.lower():
                         raise ValueError("stub html")
@@ -98,8 +96,10 @@ class BaseScraper(ABC):
                 backoff = (2 ** retries) * base_delay + random.random()
                 self.logger.warning(f"{url} failed: {e} (retry {retries}/{max_retries})")
                 time.sleep(backoff)
+    
         self.logger.error(f"Giving up on {url} after {max_retries} attempts")
         return ""
+
            
     @abstractmethod
     def scrape(self) -> Tuple[List['JobListing'], Dict[str, List[str]]]:
