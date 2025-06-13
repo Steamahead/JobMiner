@@ -31,53 +31,54 @@ except ImportError:
 
 class BaseScraper(ABC):
     """Base class for all job scrapers"""
-
+    
     def __init__(self):
-        """Initialize common request headers and a logger."""
-        self.logger = logging.getLogger(self.__class__.__name__)
+        # 1) HTTP headers for all requests
         self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) "
-                "Gecko/20100101 Firefox/117.0"
-            )
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/98.0.4758.102 Safari/537.36',
+            'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;'
+                      'q=0.9,*/*;q=0.8'
         }
 
+        # 2) Logger instance scoped to this scraper
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    
     def get_page_html(self, url: str, max_retries=3, base_delay=1) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
         retries = 0
         while retries < max_retries:
             try:
-                # random delay between requests
+                # Add a random delay between requests (between base_delay and base_delay*2 seconds)
+
                 delay = base_delay + random.uniform(0, 1.5)
                 time.sleep(delay)
-
+                            
                 response = requests.get(url, headers=self.headers, timeout=30)
-                self.logger.info(f"GET {url} → {response.status_code}, {len(response.text)} bytes")
-
-                # handle rate-limit
+                
+                # If we hit a rate limit, wait longer and retry
                 if response.status_code == 429:
                     retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
-                    self.logger.warning(
-                        f"Rate limited, retrying in {retry_delay:.1f}s "
-                        f"(attempt {retries+1}/{max_retries})"
-                    )
+                    logging.warning(f"Rate limited, waiting {retry_delay:.2f} seconds before retry {retries+1}/{max_retries}")
                     time.sleep(retry_delay)
                     retries += 1
                     continue
-
+                    
                 response.raise_for_status()
                 return response.text
-
+                
             except Exception as e:
                 retries += 1
-                retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
-                self.logger.error(f"Error fetching {url}: {e} (retry {retries}/{max_retries})")
+                retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)     
+                logging.error(f"Error fetching URL {url}: {str(e)}")
+                logging.info(f"Retrying in {retry_delay:.2f} seconds (attempt {retries}/{max_retries})")
                 time.sleep(retry_delay)
-
-        # all retries failed
-        self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
-        return ""
-
+        
+        return ""  # Return empty string if all retries fail
+           
     @abstractmethod
     def scrape(self) -> Tuple[List['JobListing'], Dict[str, List[str]]]:
         """
