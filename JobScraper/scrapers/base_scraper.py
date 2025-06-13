@@ -10,7 +10,6 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-from .base_scraper import BaseScraper
 from ..models import JobListing, Skill
 from ..database import insert_job_listing, insert_skill
 
