@@ -29,18 +29,22 @@ except ImportError:
                 # Last resort - raise a clear error
                 raise ImportError("BeautifulSoup cannot be imported. Please ensure bs4 is correctly installed.")
 
+
 class BaseScraper(ABC):
     """Base class for all job scrapers"""
 
-    def __init__(self):
-        """Initialize common request headers and a logger."""
+    def __init__(self) -> None:
+        """Initialize shared resources for scrapers."""
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) "
-                "Gecko/20100101 Firefox/117.0"
-            )
-        }
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) "
+                    "Gecko/20100101 Firefox/117.0"
+                )
+            }
+        )
 
     def get_page_html(self, url: str, max_retries=3, base_delay=1) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
@@ -51,7 +55,7 @@ class BaseScraper(ABC):
                 delay = base_delay + random.uniform(0, 1.5)
                 time.sleep(delay)
 
-                response = requests.get(url, headers=self.headers, timeout=30)
+                response = self.session.get(url, timeout=30)
                 self.logger.info(f"GET {url} → {response.status_code}, {len(response.text)} bytes")
 
                 # handle rate-limit
