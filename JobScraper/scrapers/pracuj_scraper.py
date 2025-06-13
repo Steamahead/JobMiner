@@ -332,12 +332,19 @@ class PracujScraper(BaseScraper):
         )
 
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
+        import time
+        # soft‐stop after 9 minutes (540s) to stay under Azure’s 10m cap
+        deadline = time.perf_counter() + 9 * 60
         all_jobs = []
         all_skills = {}
         processed = set()
         current_page = 1
 
         while True:
+            # budget‐guard
+            if time.perf_counter() > deadline:
+                self.logger.warning("⏰ Time budget reached (9 min), stopping early")
+                break
             # 1) Fetch search results page
             page_url = (
                 self.search_url
