@@ -145,7 +145,7 @@ class PracujScraper(BaseScraper):
         }
     
         base = 'ul[data-test="sections-benefit-list"] li[data-test="{dt}"] div[data-test="offer-badge-title"]'
-
+    
         # Location: office first, else remote
         off = soup.select_one(base.format(dt="sections-benefit-workplaces"))
         wp  = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
@@ -173,17 +173,7 @@ class PracujScraper(BaseScraper):
         om = soup.select_one(base.format(dt="sections-benefit-work-modes-many"))
         if om:
             result["OperatingMode"] = om.get_text(strip=True)
-        
-        # Fallback: first div[data-test="offer-badge-title"] not already used for other fields
-        if not result["OperatingMode"]:
-            all_badges = soup.select('div[data-test="offer-badge-title"]')
-            for div in all_badges:
-                text = div.get_text(strip=True)
-                # Avoid duplicates of Location, WorkType, etc.
-                if text not in result.values():
-                    result["OperatingMode"] = text
-                    break
-
+    
         # SalaryMin & SalaryMax
         sal = soup.select_one(
             'div[data-test="section-salary"] div[data-test="text-earningAmount"]'
@@ -287,35 +277,29 @@ class PracujScraper(BaseScraper):
         # No valid 1–5 in any bullet → None
         return None
         
-    def _parse_job_detail(self, html: str, job_url: str) -> Optional[JobListing]:
-        # 1) Warn if the raw HTML is missing the employer-name tag
-        if not html or "<h2 data-test='text-employerName'" not in html:
-            self.logger.warning(
-                f"No employer-name block in response for {job_url}: {html[:200]!r}"
-            )
-    
+    def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
     
-        # 2) Job ID
+        # — ID inline —
         m = re.search(r",oferta,(\d+)", job_url)
         job_id = m.group(1) if m else str(hash(job_url))[:8]
     
-        # 3) Title
+        # — Title —
+        # <h1 data-test="text-positionName">…</h1>
         t = soup.select_one("h1[data-test='text-positionName']")
         title = t.get_text(strip=True) if t else "Unknown Title"
     
-        # 4) Company
+        # — Company —
+        # <h2 data-test="text-employerName">…</h2>
         c = soup.select_one("h2[data-test='text-employerName']")
-        if not c:
-            self.logger.warning(f"Parser saw no <h2 data-test='text-employerName'> for {job_url}")
-        company = c.find(text=True, recursive=False).strip() if c else "Unknown Company"
+        company = c.get_text(strip=True) if c else "Unknown Company"
     
-        # 5) Badges / Salary / Location
+        # — Badges / Salary / Location —
         badges = self._extract_badge_info(soup)
     
-        # 6) Years of Experience
+        # — Years of Experience —
         yoe = self._extract_years_of_experience(soup)
-        
+    
         return JobListing(
             job_id=job_id,
             source="pracuj.pl",
