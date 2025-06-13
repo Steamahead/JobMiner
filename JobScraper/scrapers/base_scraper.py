@@ -85,9 +85,11 @@ class BaseScraper(ABC):
                     raise ValueError("HTTP 429")
                 text = resp.text or ""
     
-                # stub-page detection
-                if len(text) < 2000 or "nie wspieramy" in text.lower():
-                    raise ValueError("stub html")
+                # Only treat detail pages as retryable stubs
+                # (Pracuj detail URLs always contain ",oferta,")
+                if ",oferta," in url:
+                    if len(text) < 2000 or "nie wspieramy" in text.lower():
+                        raise ValueError("stub html")
     
                 return text
     
