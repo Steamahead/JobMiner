@@ -33,7 +33,14 @@ class BaseScraper(ABC):
     """Base class for all job scrapers"""
 
     def __init__(self):
-        # … your headers & logger setup …
+        """Initialize common request headers and a logger."""
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) "
+                "Gecko/20100101 Firefox/117.0"
+            )
+        }
 
     def get_page_html(self, url: str, max_retries=3, base_delay=1) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
