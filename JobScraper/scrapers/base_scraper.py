@@ -34,7 +34,6 @@ class BaseScraper(ABC):
     """Base class for all job scrapers"""
 
     def __init__(self):
-        # 1) HTTP headers for all requests
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                           'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -43,7 +42,6 @@ class BaseScraper(ABC):
             'Accept': 'text/html,application/xhtml+xml,application/xml;'
                       'q=0.9,*/*;q=0.8'
         }
-        # 2) Logger instance scoped to this scraper
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_page_html(self, url: str, max_retries=3, base_delay=1) -> str:
@@ -51,33 +49,26 @@ class BaseScraper(ABC):
         retries = 0
         while retries < max_retries:
             try:
-                # random delay between base_delay and base_delay*2
                 delay = base_delay + random.uniform(0, 1.5)
                 time.sleep(delay)
-
                 response = requests.get(url, headers=self.headers, timeout=30)
-
-                # rate-limit handling
                 if response.status_code == 429:
                     retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
-                    logging.warning(
+                    self.logger.warning(
                         f"Rate limited, waiting {retry_delay:.2f}s before retry "
                         f"{retries+1}/{max_retries}"
                     )
                     time.sleep(retry_delay)
                     retries += 1
                     continue
-
                 response.raise_for_status()
                 return response.text
-
             except Exception as e:
                 retries += 1
                 retry_delay = base_delay * (2 ** retries) + random.uniform(0, 3)
-                logging.error(f"Error fetching {url}: {e}")
-                logging.info(f"Retrying in {retry_delay:.2f}s (attempt {retries}/{max_retries})")
+                self.logger.error(f"Error fetching {url}: {e}")
+                self.logger.info(f"Retrying in {retry_delay:.2f}s (attempt {retries}/{max_retries})")
                 time.sleep(retry_delay)
-
         return ""  # give up after max_retries
 
     @abstractmethod
