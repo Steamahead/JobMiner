@@ -1,16 +1,15 @@
+from typing import List, Dict, Tuple, Set, Optional
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup
-from datetime import datetime
-from typing import List, Dict, Tuple, Set, Optional, Union
-
-from .base_scraper import BaseScraper
 from ..models import JobListing, Skill
 from ..database import insert_job_listing, insert_skill
-
+from .base_scraper import BaseScraper
+import random, os, tempfile, uuid
+from datetime import datetime
+from bs4 import BeautifulSoup
 
 class PracujScraper(BaseScraper):
     """Scraper for pracuj.pl job board"""
@@ -19,7 +18,7 @@ class PracujScraper(BaseScraper):
         super().__init__()
         self.base_url = "https://www.pracuj.pl"
         self.search_url = (
-            "https://www.pracuj.pl/praca/warszawa;wp?rd=30&et=3%2C17%2C4&its=big-data-science"
+            "https://it.pracuj.pl/praca/warszawa;wp?rd=30&et=3%2C17%2C4&its=big-data-science"
         )
         # Define skill categories
         self.skill_categories = {
@@ -93,9 +92,11 @@ class PracujScraper(BaseScraper):
             return None, None
 
         clean_text = salary_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+        # Detect if this was "per hour" by looking for zł/h or zł/godz
         is_hourly = 'zł/h' in clean_text or 'zł/godz' in clean_text
         clean_text = re.sub(r'[^\d,\.\-–]', '', clean_text)
 
+        # Look for patterns like "12000–20000" or "150,00-180,00"
         match = re.search(r'([\d\.,]+)[–\-]([\d\.,]+)', clean_text)
         if match:
             try:
@@ -103,13 +104,17 @@ class PracujScraper(BaseScraper):
                 max_val = match.group(2).replace(',', '.')
                 min_salary = float(min_val)
                 max_salary = float(max_val)
+
                 if is_hourly:
+                    # Convert hourly to monthly by assuming 160h/month
                     min_salary *= 160
                     max_salary *= 160
+
                 return int(min_salary), int(max_salary)
             except ValueError:
                 pass
 
+        # If only a single number
         match = re.search(r'([\d\.,]+)', clean_text)
         if match:
             try:
@@ -123,68 +128,78 @@ class PracujScraper(BaseScraper):
 
         return None, None
 
-    def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str, object]:
+    def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str,object]:
         """
         Extract SalaryMin/SalaryMax, Location, OperatingMode,
         WorkType, ExperienceLevel, EmploymentType from the in-offer
         benefit list + salary section.
         """
         result = {
-            "SalaryMin": None,
-            "SalaryMax": None,
-            "Location": "",
-            "OperatingMode": "",
-            "WorkType": "",
+            "SalaryMin":       None,
+            "SalaryMax":       None,
+            "Location":        "",
+            "OperatingMode":   "",
+            "WorkType":        "",
             "ExperienceLevel": "",
-            "EmploymentType": "",
+            "EmploymentType":  "",
         }
-
+    
         base = 'ul[data-test="sections-benefit-list"] li[data-test="{dt}"] div[data-test="offer-badge-title"]'
 
+        # Location: office first, else remote
         off = soup.select_one(base.format(dt="sections-benefit-workplaces"))
-        wp = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
+        wp  = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
         if off:
             result["Location"] = off.get_text(strip=True)
         elif wp:
             result["Location"] = wp.get_text(strip=True)
-
+    
+        # EmploymentType (contract)
         et = soup.select_one(base.format(dt="sections-benefit-contracts"))
         if et:
             result["EmploymentType"] = et.get_text(strip=True)
-
+    
+        # WorkType (schedule)
         ws = soup.select_one(base.format(dt="sections-benefit-work-schedule"))
         if ws:
             result["WorkType"] = ws.get_text(strip=True)
-
+    
+        # ExperienceLevel (seniority)
         ex = soup.select_one(base.format(dt="sections-benefit-employment-type-name"))
         if ex:
             result["ExperienceLevel"] = ex.get_text(strip=True)
-
+    
+        # OperatingMode (mode)
         om = soup.select_one(base.format(dt="sections-benefit-work-modes-many"))
         if om:
             result["OperatingMode"] = om.get_text(strip=True)
-
+        
+        # Fallback: first div[data-test="offer-badge-title"] not already used for other fields
         if not result["OperatingMode"]:
             all_badges = soup.select('div[data-test="offer-badge-title"]')
             for div in all_badges:
                 text = div.get_text(strip=True)
+                # Avoid duplicates of Location, WorkType, etc.
                 if text not in result.values():
                     result["OperatingMode"] = text
                     break
 
+        # SalaryMin & SalaryMax
         sal = soup.select_one(
             'div[data-test="section-salary"] div[data-test="text-earningAmount"]'
         )
         if sal:
             mn, mx = self._extract_salary(sal.get_text(" ", strip=True))
             result["SalaryMin"], result["SalaryMax"] = mn, mx
-
+    
         return result
+
 
     def _extract_skills_from_listing(self, soup: BeautifulSoup) -> List[str]:
         """Extract skills from the dedicated skills section and/or description"""
         found_skills = set()
 
+        # Check the dedicated skills section
         skills_section = soup.find("ul", attrs={"data-test": "aggregate-open-dictionary-model"})
         if skills_section:
             skill_items = skills_section.find_all("li", class_="catru5k")
@@ -192,6 +207,7 @@ class PracujScraper(BaseScraper):
                 skill_text = item.get_text(strip=True).lower()
                 found_skills.add(skill_text)
 
+        # If few/no skills found, check the description bullets
         if len(found_skills) < 2:
             description_section = soup.find("ul", attrs={"data-test": "aggregate-bullet-model"})
             if description_section:
@@ -200,6 +216,7 @@ class PracujScraper(BaseScraper):
                 desc_skills = self._extract_skills_from_text(description_text)
                 found_skills.update(desc_skills)
 
+        # Fallback: search the entire page content
         if len(found_skills) < 2:
             page_text = soup.get_text()
             desc_skills = self._extract_skills_from_text(page_text)
@@ -228,6 +245,7 @@ class PracujScraper(BaseScraper):
         """Map raw skill texts to our standardized skill names"""
         mapped_skills = set()
 
+        # Simplified skill variations for key skills
         skill_variations = {
             "sql": ["sql", "structured query language", "sql server", "t-sql"],
             "python": ["python", "język python"],
@@ -241,11 +259,13 @@ class PracujScraper(BaseScraper):
         }
 
         for raw_skill in raw_skills:
+            # Direct match to a standard skill
             for category, skills in self.skill_categories.items():
                 if raw_skill in skills:
                     mapped_skills.add(raw_skill)
                     break
 
+            # Check for variations
             for standard_skill, variations in skill_variations.items():
                 if raw_skill in variations:
                     mapped_skills.add(standard_skill)
@@ -253,64 +273,49 @@ class PracujScraper(BaseScraper):
 
         return mapped_skills
 
-    def _extract_years_of_experience(
-        self, soup: BeautifulSoup
-    ) -> Optional[Union[int, str]]:
+    def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """
-        1) Look only in the requirements bullets for any phrasing of years:
-        …
+        Grab the first integer 1–5 from any <li class="tkzmjn3"> item.
+        Return None if no 1–5 is found.
         """
-        bullets = soup.select(
-            "ul[data-test='aggregate-bullet-model'] li.tkzmjn3"
-        ) or []
-
-        for li in bullets:
-            text = li.get_text(" ", strip=True).lower()
-            # a) "kilkuletn" / "wieloletn"
-            if "kilkuletn" in text or "wieloletn" in text:
-                return "several years"
-            # b) hyphen ranges
-            if m := re.search(r"\b([1-9]|1[0-2])[-–]\s*(?:[1-9]|1[0-2])", text):
-                return int(m.group(1))
-            # c) plus-sign
-            if m := re.search(r"\b([1-9]|1[0-2])\+\s*years?\b", text):
-                return int(m.group(1))
-            # d) Min./Minimum
-            if m := re.search(
-                r"\bmin(?:\.|imum)?\s*([1-9]|1[0-2])\b.*(?:rok|lat|years?)", text
-            ):
-                return int(m.group(1))
-            # e) integer + keyword
-            if m := re.search(
-                r"\b([1-9]|1[0-2])\s*(?:lat\w*|rok\w*|years?)\b", text
-            ):
+        for li in soup.select("li.tkzmjn3"):
+            text = li.get_text(" ", strip=True)
+            m = re.search(r"\b([1-5])\b", text)
+            if m:
                 return int(m.group(1))
 
+        # No valid 1–5 in any bullet → None
         return None
-
-    def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
+        
+    def _parse_job_detail(self, html: str, job_url: str) -> Optional[JobListing]:
+        # 1) Warn if the raw HTML is missing the employer-name tag
+        if not html or "<h2 data-test='text-employerName'" not in html:
+            self.logger.warning(
+                f"No employer-name block in response for {job_url}: {html[:200]!r}"
+            )
+    
         soup = BeautifulSoup(html, "html.parser")
-
-        # Job ID
+    
+        # 2) Job ID
         m = re.search(r",oferta,(\d+)", job_url)
         job_id = m.group(1) if m else str(hash(job_url))[:8]
-
-        # Title
+    
+        # 3) Title
         t = soup.select_one("h1[data-test='text-positionName']")
         title = t.get_text(strip=True) if t else "Unknown Title"
-
-        # Company
+    
+        # 4) Company
         c = soup.select_one("h2[data-test='text-employerName']")
         if not c:
-            self.logger.warning(f"No <h2 data-test='text-employerName'> for {job_url}")
+            self.logger.warning(f"Parser saw no <h2 data-test='text-employerName'> for {job_url}")
         company = c.find(text=True, recursive=False).strip() if c else "Unknown Company"
-
-        # Badges / Salary / Location
+    
+        # 5) Badges / Salary / Location
         badges = self._extract_badge_info(soup)
-
-        # Years of Experience
+    
+        # 6) Years of Experience
         yoe = self._extract_years_of_experience(soup)
-
+        
         return JobListing(
             job_id=job_id,
             source="pracuj.pl",
@@ -330,12 +335,13 @@ class PracujScraper(BaseScraper):
         )
 
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
-        all_jobs: List[JobListing] = []
-        all_skills: Dict[str, List[str]] = {}
-        processed: Set[str] = set()
+        all_jobs = []
+        all_skills = {}
+        processed = set()
         current_page = 1
 
         while True:
+            # 1) Fetch search results page
             page_url = (
                 self.search_url
                 if current_page == 1
@@ -344,51 +350,53 @@ class PracujScraper(BaseScraper):
             html = self.get_page_html(page_url)
             soup = BeautifulSoup(html, "html.parser")
 
+            # 2) Gather every job-offer link, ignoring the banner entirely
             offer_links = soup.select(
                 "div[data-test='section-offers'] a[data-test='link-offer-title']"
             )
             if not offer_links:
                 break
 
+            # 3) Build tasks from each link found
             tasks = []
             for a in offer_links:
                 href = a["href"]
                 if href.startswith("/"):
-                    href = urljoin(self.search_url, href)
+                    href = self.base_url + href
+
+                # skip duplicates & employer-profile links
                 if href in processed or "pracodawcy.pracuj.pl/company" in href:
                     continue
                 processed.add(href)
+
                 m = re.search(r",oferta,(\d+)", href)
                 job_id = m.group(1) if m else str(hash(href))[:8]
                 tasks.append({"url": href, "job_id": job_id})
 
-            # … after building `tasks = [...]` …
+            jobs_this_page = []
+
+            # 4) Fetch detail pages in parallel and parse
             with ThreadPoolExecutor(max_workers=8) as pool:
-                # submit all tasks while `pool` is in scope
                 fut2task = {
                     pool.submit(self.get_page_html, t["url"]): t
                     for t in tasks
                 }
-            
                 for fut in as_completed(fut2task):
                     task = fut2task[fut]
-                    try:
-                        detail_html = fut.result(timeout=60)
-                    except Exception as e:
-                        self.logger.warning(f"Timeout or error fetching {task['url']}: {e}")
-                        continue
-            
-                    if not detail_html or "<h1" not in detail_html:
-                        self.logger.warning(f"No content for {task['url']} – skipping")
-                        continue
-            
+                    detail_html = fut.result(timeout=60)
+
+                    # Parse every field from the detail page
                     job = self._parse_job_detail(detail_html, task["url"])
+
+                    # Extract skills
                     detail_soup = BeautifulSoup(detail_html, "html.parser")
                     skills = self._extract_skills_from_listing(detail_soup)
-            
-                    all_jobs.append(job)
+
+                    jobs_this_page.append(job)
                     all_skills[job.job_id] = skills
 
+            # 5) Persist & next page
+            all_jobs.extend(jobs_this_page)
             current_page += 1
 
         return all_jobs, all_skills
