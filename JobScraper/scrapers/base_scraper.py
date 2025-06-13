@@ -61,6 +61,7 @@ class BaseScraper(ABC):
                       'q=0.9,*/*;q=0.8'
         }
         self._local = threading.local()
+        self.logger = logging.getLogger(self.__class__.__name__)
     @property
     def session(self):
         if not hasattr(self._local, "session"):
@@ -70,8 +71,7 @@ class BaseScraper(ABC):
             self._local.session = s
         return self._local.session
         # 2) Logger instance scoped to this scraper
-        self.logger = logging.getLogger(self.__class__.__name__)
-    
+            
     def get_page_html(self, url, max_retries=4, base_delay=0.5) -> str:
         retries = 0
         while retries < max_retries:
