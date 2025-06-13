@@ -1,12 +1,11 @@
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import time
-from typing import List, Dict, Tuple, Set, Optional, Union
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin
-
 from bs4 import BeautifulSoup
 from datetime import datetime
+from typing import List, Dict, Tuple, Set, Optional
 
 from .base_scraper import BaseScraper
 from ..models import JobListing, Skill
@@ -290,12 +289,6 @@ class PracujScraper(BaseScraper):
         return None
 
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
-        # Warn if missing company block
-        if not html or "<h2 data-test='text-employerName'" not in html:
-            self.logger.warning(
-                f"No employer-name block in response for {job_url}: {html[:200]!r}"
-            )
-
         soup = BeautifulSoup(html, "html.parser")
 
         # Job ID
@@ -309,7 +302,7 @@ class PracujScraper(BaseScraper):
         # Company
         c = soup.select_one("h2[data-test='text-employerName']")
         if not c:
-            self.logger.warning(f"Parser saw no <h2 data-test='text-employerName'> for {job_url}")
+            self.logger.warning(f"No <h2 data-test='text-employerName'> for {job_url}")
         company = c.find(text=True, recursive=False).strip() if c else "Unknown Company"
 
         # Badges / Salary / Location
@@ -359,25 +352,29 @@ class PracujScraper(BaseScraper):
 
             tasks = []
             for a in offer_links:
-                href = a.get("href", "")
+                href = a["href"]
                 if href.startswith("/"):
                     href = urljoin(self.search_url, href)
-
                 if href in processed or "pracodawcy.pracuj.pl/company" in href:
                     continue
                 processed.add(href)
-
                 m = re.search(r",oferta,(\d+)", href)
                 job_id = m.group(1) if m else str(hash(href))[:8]
                 tasks.append({"url": href, "job_id": job_id})
 
-            jobs_this_page: List[JobListing] = []
-
+            # **Fix:** assign fut2task so we can map back
+            fut2task = {
+                pool.submit(self.get_page_html, t["url"]): t
+                for t in tasks
+            }
             with ThreadPoolExecutor(max_workers=8) as pool:
-                fut2task = {pool.submit(self.get_page_html, t["url"]): t for t in tasks}
                 for fut in as_completed(fut2task):
                     task = fut2task[fut]
-                    detail_html = fut.result(timeout=60)
+                    try:
+                        detail_html = fut.result(timeout=60)
+                    except Exception as e:
+                        self.logger.warning(f"Timeout or error fetching {task['url']}: {e}")
+                        continue
 
                     if not detail_html or "<h1" not in detail_html:
                         self.logger.warning(f"No content for {task['url']} – skipping")
@@ -387,10 +384,9 @@ class PracujScraper(BaseScraper):
                     detail_soup = BeautifulSoup(detail_html, "html.parser")
                     skills = self._extract_skills_from_listing(detail_soup)
 
-                    jobs_this_page.append(job)
+                    all_jobs.append(job)
                     all_skills[job.job_id] = skills
 
-            all_jobs.extend(jobs_this_page)
             current_page += 1
 
         return all_jobs, all_skills
