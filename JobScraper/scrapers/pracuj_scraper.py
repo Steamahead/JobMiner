@@ -362,18 +362,14 @@ class PracujScraper(BaseScraper):
                 job_id = m.group(1) if m else str(hash(href))[:8]
                 tasks.append({"url": href, "job_id": job_id})
 
-            # **Fix:** assign fut2task so we can map back
-            fut2task = {
-                pool.submit(self.get_page_html, t["url"]): t
-                for t in tasks
-            }
+            # … after building `tasks = [...]` …
             with ThreadPoolExecutor(max_workers=8) as pool:
-                # submit all jobs _inside_ the with so pool is defined
+                # submit all tasks while `pool` is in scope
                 fut2task = {
                     pool.submit(self.get_page_html, t["url"]): t
                     for t in tasks
                 }
-        
+            
                 for fut in as_completed(fut2task):
                     task = fut2task[fut]
                     try:
@@ -381,15 +377,15 @@ class PracujScraper(BaseScraper):
                     except Exception as e:
                         self.logger.warning(f"Timeout or error fetching {task['url']}: {e}")
                         continue
-        
+            
                     if not detail_html or "<h1" not in detail_html:
                         self.logger.warning(f"No content for {task['url']} – skipping")
                         continue
-        
+            
                     job = self._parse_job_detail(detail_html, task["url"])
                     detail_soup = BeautifulSoup(detail_html, "html.parser")
                     skills = self._extract_skills_from_listing(detail_soup)
-        
+            
                     all_jobs.append(job)
                     all_skills[job.job_id] = skills
 
