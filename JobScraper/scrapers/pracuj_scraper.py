@@ -173,7 +173,17 @@ class PracujScraper(BaseScraper):
         om = soup.select_one(base.format(dt="sections-benefit-work-modes-many"))
         if om:
             result["OperatingMode"] = om.get_text(strip=True)
-    
+        
+        # Fallback: first div[data-test="offer-badge-title"] not already used for other fields
+        if not result["OperatingMode"]:
+            all_badges = soup.select('div[data-test="offer-badge-title"]')
+            for div in all_badges:
+                text = div.get_text(strip=True)
+                # Avoid duplicates of Location, WorkType, etc.
+                if text not in result.values():
+                    result["OperatingMode"] = text
+                    break
+
         # SalaryMin & SalaryMax
         sal = soup.select_one(
             'div[data-test="section-salary"] div[data-test="text-earningAmount"]'
@@ -292,9 +302,12 @@ class PracujScraper(BaseScraper):
         # — Company —
         # <h2 data-test="text-employerName">…</h2>
         c = soup.select_one("h2[data-test='text-employerName']")
-        company = c.get_text(strip=True) if c else "Unknown Company"
-    
-        # — Badges / Salary / Location —
+        if c:
+            company = "".join(c.find_all(text=True, recursive=False)).strip()
+        else:
+            company = "Unknown Company"
+
+            # — Badges / Salary / Location —
         badges = self._extract_badge_info(soup)
     
         # — Years of Experience —
