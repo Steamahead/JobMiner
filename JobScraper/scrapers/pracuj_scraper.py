@@ -372,25 +372,34 @@ class PracujScraper(BaseScraper):
 
             jobs_this_page = []
 
-            # 4) Fetch detail pages in parallel and parse
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                fut2task = {
-                    pool.submit(self.get_page_html, t["url"]): t
-                    for t in tasks
-                }
-                for fut in as_completed(fut2task):
-                    task = fut2task[fut]
-                    detail_html = fut.result(timeout=60)
+            # 4) Fetch detail pages in manageable batches
+            CHUNK_SIZE = 8
+            for i in range(0, len(tasks), CHUNK_SIZE):
+                batch = tasks[i : i + CHUNK_SIZE]
+                with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+                    futures = {
+                        pool.submit(self.get_page_html, t["url"]): t for t in batch
+                    }
+                    for fut in as_completed(futures):
+                        task = futures[fut]
+                        detail_html = fut.result(timeout=60)
 
-                    # Parse every field from the detail page
-                    job = self._parse_job_detail(detail_html, task["url"])
+                        # Parse every field from the detail page
+                        job = self._parse_job_detail(detail_html, task["url"])
 
-                    # Extract skills
-                    detail_soup = BeautifulSoup(detail_html, "html.parser")
-                    skills = self._extract_skills_from_listing(detail_soup)
+                        # Extract skills
+                        detail_soup = BeautifulSoup(detail_html, "html.parser")
+                        skills = self._extract_skills_from_listing(detail_soup)
 
-                    jobs_this_page.append(job)
-                    all_skills[job.job_id] = skills
+                        jobs_this_page.append(job)
+                        all_skills[job.job_id] = skills
+
+                if i + CHUNK_SIZE < len(tasks):
+                    pause = random.uniform(2, 4)
+                    self.logger.info(
+                        f"Pausing {pause:.1f}s before next batch…"
+                    )
+                    time.sleep(pause)
 
             # 5) Persist & next page
             all_jobs.extend(jobs_this_page)
