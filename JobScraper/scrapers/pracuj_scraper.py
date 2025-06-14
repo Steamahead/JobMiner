@@ -395,10 +395,8 @@ class PracujScraper(BaseScraper):
                         all_skills[job.job_id] = skills
 
                 if i + CHUNK_SIZE < len(tasks):
-                    pause = random.uniform(5, 10)
-                    self.logger.info(
-                        f"Pausing {pause:.1f}s before next batch…"
-                    )
+                    pause = random.uniform(2, 4)
+                    self.logger.info(f"Pausing {pause:.1f}s before next batch…")
                     time.sleep(pause)
 
             # 5) Persist & next page
