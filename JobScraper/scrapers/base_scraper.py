@@ -46,6 +46,10 @@ class BaseScraper(ABC):
         # 2) Logger instance scoped to this scraper
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        # 3) Reuse a single Session for all HTTP calls
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+
     
     def get_page_html(self, url: str, max_retries=3, base_delay=1) -> str:
         """Get HTML content from a URL with retry logic and random delays"""
@@ -57,7 +61,7 @@ class BaseScraper(ABC):
                 delay = base_delay + random.uniform(0, 1.5)
                 time.sleep(delay)
                             
-                response = requests.get(url, headers=self.headers, timeout=30)
+                response = self.session.get(url, timeout=30)
                 
                 # If we hit a rate limit, wait longer and retry
                 if response.status_code == 429:
