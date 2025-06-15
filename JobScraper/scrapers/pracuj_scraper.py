@@ -292,20 +292,20 @@ class PracujScraper(BaseScraper):
     Parse the pagination controls and return the total number of listing pages.
     Fallback to a safe default if we can’t detect it.
     """
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
-        if pagination:
-            nums = [
-                int(li.get_text(strip=True))
-                for li in pagination.find_all("li")
-                if li.get_text(strip=True).isdigit()
-            ]
-            if nums:
-                return max(nums)
-    except Exception:
-        self.logger.warning("Could not parse total pages, defaulting to 1")
-    return 1
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
+            if pagination:
+                nums = [
+                    int(li.get_text(strip=True))
+                    for li in pagination.find_all("li")
+                    if li.get_text(strip=True).isdigit()
+                ]
+                if nums:
+                    return max(nums)
+        except Exception:
+            self.logger.warning("Could not parse total pages, defaulting to 1")
+        return 1
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
