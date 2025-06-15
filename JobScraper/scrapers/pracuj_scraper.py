@@ -417,28 +417,41 @@ class PracujScraper(BaseScraper):
         for page in range(1, total_pages + 1):
             page_url = f"{self.search_url}&pn={page}"
             tasks = []
+            for attempt in range(1, 4):    def scrape(self) -> (list, dict):
+        all_jobs = []
+        all_skills = {}
+
+        page = 1
+        while True:
+            page_url = f"{self.search_url}&pn={page}"
+            tasks = []
+
+            # Retry listing page up to 3× if too few results
             for attempt in range(1, 4):
                 html = self.session.get(page_url, timeout=30).text
                 tasks = self._parse_listings(html)
-                count = len(tasks)
-                if count >= int(self.EXPECTED_PER_PAGE * 0.8):
-                    self.logger.info(f"Page {page}: found {count} tasks on try #{attempt}")
+                if len(tasks) == 0:
+                    # no offers at all → we’re past the last page
                     break
-                else:
-                    self.logger.warning(
-                        f"Page {page}: only {count} tasks (try #{attempt}), retrying…"
-                    )
-                    time.sleep(random.uniform(1, 2))
-            else:
-                self.logger.error(f"Page {page} still low ({count} tasks); moving on")
+                if len(tasks) >= int(self.EXPECTED_PER_PAGE * 0.8):
+                    self.logger.info(f"Page {page}: {len(tasks)} listings on try #{attempt}")
+                    break
+                self.logger.warning(
+                    f"Page {page}: only {len(tasks)} listings (try #{attempt}), retrying…"
+                )
+                time.sleep(random.uniform(1, 2))
 
-            # gentle pause between listing pages
-            if page < total_pages:
-                p = random.uniform(1, 2)
-                self.logger.info(f"Pausing {p:.1f}s after listing page {page}…")
-                time.sleep(p)
+            # If still empty after retries, we’re done
+            if not tasks:
+                self.logger.info(f"No listings found on page {page}, finishing pagination.")
+                break
 
-            # --- 3) Chunked detail-fetch with “pause every 3 batches” ---
+            # Gentle pause between listing pages
+            p = random.uniform(1, 2)
+            self.logger.info(f"Pausing {p:.1f}s after listing page {page}…")
+            time.sleep(p)
+
+            # Chunked detail-fetch with pause­-every-3­-batches
             CHUNK_SIZE = 8
             for i in range(0, len(tasks), CHUNK_SIZE):
                 batch = tasks[i : i + CHUNK_SIZE]
@@ -457,11 +470,14 @@ class PracujScraper(BaseScraper):
                         all_jobs.append(job)
                         all_skills[job.job_id] = skills
 
+                # pause only after every 3 batches
                 batch_num = (i // CHUNK_SIZE) + 1
                 if batch_num % 3 == 0 and i + CHUNK_SIZE < len(tasks):
                     w = random.uniform(2, 4)
                     self.logger.info(f"Pausing {w:.1f}s after batch #{batch_num}…")
                     time.sleep(w)
+
+            page += 1
 
         return all_jobs, all_skills
 
