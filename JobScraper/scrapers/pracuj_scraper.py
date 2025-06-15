@@ -394,9 +394,11 @@ class PracujScraper(BaseScraper):
                         jobs_this_page.append(job)
                         all_skills[job.job_id] = skills
 
-                if i + CHUNK_SIZE < len(tasks):
+                # Only pause after every 3 batches
+                batch_num = (i // CHUNK_SIZE) + 1
+                if i + CHUNK_SIZE < len(tasks) and batch_num % 3 == 0:
                     pause = random.uniform(2, 4)
-                    self.logger.info(f"Pausing {pause:.1f}s before next batch…")
+                    self.logger.info(f"Pausing {pause:.1f}s after batch #{batch_num}…")
                     time.sleep(pause)
 
             # 5) Persist & next page
