@@ -288,10 +288,10 @@ class PracujScraper(BaseScraper):
         return None
 
     def _get_total_pages(self, html: str) -> int:
-    """
-    Parse the pagination controls and return the total number of listing pages.
-    Fallback to a safe default if we can’t detect it.
-    """
+        """
+        Parse the pagination controls and return the total number of listing pages.
+        Fallback to a safe default if we can’t detect it.
+        """
         try:
             soup = BeautifulSoup(html, "html.parser")
             pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
