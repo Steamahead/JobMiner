@@ -351,19 +351,19 @@ class PracujScraper(BaseScraper):
             listing_status="Active",
         )
 
-    def scrape(self) -> (list, dict):
+    def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
         """
         Main scraping entrypoint:
-        1) Detect total pages
-        2) Loop page=1…N with retry (up to 3 tries if <80% of EXPECTED_PER_PAGE)
-        3) Chunk detail-page fetches with pause-every-3-batches
+         1) Detect total pages
+         2) Loop page=1…N with retry (up to 3 tries if <80% of EXPECTED_PER_PAGE)
+         3) Chunk detail-page fetches with pause-every-3-batches
         Returns: (all_jobs, all_skills)
         """
         all_jobs = []
         all_skills = {}
 
         # --- 1) Fetch page 1 to detect how many pages exist ---
-        first_url = self.search_url  # e.g. "https://it.pracuj.pl/praca/…"
+        first_url = self.search_url
         first_html = self.session.get(first_url, timeout=30).text
         total_pages = self._get_total_pages(first_html)
         self.logger.info(f"Detected {total_pages} listing pages")
@@ -374,7 +374,7 @@ class PracujScraper(BaseScraper):
             tasks = []
             for attempt in range(1, 4):
                 html = self.session.get(page_url, timeout=30).text
-                tasks = self._parse_listings(html)  # your existing link extractor
+                tasks = self._parse_listings(html)
                 count = len(tasks)
                 if count >= int(self.EXPECTED_PER_PAGE * 0.8):
                     self.logger.info(f"Page {page}: found {count} tasks on try #{attempt}")
@@ -387,7 +387,7 @@ class PracujScraper(BaseScraper):
             else:
                 self.logger.error(f"Page {page} still low ({count} tasks); moving on")
 
-            # --- 2a) gentle pause between listing pages ---
+            # gentle pause between listing pages
             if page < total_pages:
                 p = random.uniform(1, 2)
                 self.logger.info(f"Pausing {p:.1f}s after listing page {page}…")
@@ -412,12 +412,11 @@ class PracujScraper(BaseScraper):
                         all_jobs.append(job)
                         all_skills[job.job_id] = skills
 
-                # pause only after every 3 batches
                 batch_num = (i // CHUNK_SIZE) + 1
                 if batch_num % 3 == 0 and i + CHUNK_SIZE < len(tasks):
-                    wait = random.uniform(2, 4)
-                    self.logger.info(f"Pausing {wait:.1f}s after batch #{batch_num}…")
-                    time.sleep(wait)
+                    w = random.uniform(2, 4)
+                    self.logger.info(f"Pausing {w:.1f}s after batch #{batch_num}…")
+                    time.sleep(w)
 
         return all_jobs, all_skills
 
