@@ -68,9 +68,9 @@ def create_tables_if_not_exist():
                 SalaryMin INT NULL,
                 SalaryMax INT NULL,
                 Location NVARCHAR(255) NOT NULL,
-                OperatingMode NVARCHAR(50) NOT NULL,
+                OperatingMode NVARCHAR(255) NOT NULL,
                 WorkType NVARCHAR(50) NOT NULL,
-                ExperienceLevel NVARCHAR(50) NOT NULL,
+                ExperienceLevel NVARCHAR(255) NOT NULL,
                 EmploymentType NVARCHAR(50) NOT NULL,
                 YearsOfExperience INT NULL,
                 ScrapeDate DATETIME NOT NULL,
@@ -89,7 +89,7 @@ def create_tables_if_not_exist():
                 JobID NVARCHAR(100) NOT NULL,
                 ShortID INT NOT NULL,
                 Source NVARCHAR(50) NOT NULL,
-                SkillName NVARCHAR(100) NOT NULL,
+                SkillName NVARCHAR(150) NOT NULL,
                 SkillCategory NVARCHAR(50) NOT NULL,
                 CONSTRAINT UC_JobSkill UNIQUE (JobID, Source, SkillName)
             )
