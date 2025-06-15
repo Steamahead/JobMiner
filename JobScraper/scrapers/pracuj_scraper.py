@@ -306,7 +306,36 @@ class PracujScraper(BaseScraper):
         except Exception:
             self.logger.warning("Could not parse total pages, defaulting to 1")
         return 1
-        
+
+    def _parse_listings(self, html: str) -> List[Dict[str, str]]:
+        """
+        Parse a search-results page’s HTML and return a list of tasks,
+        each a dict with 'url' and 'job_id'.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        offer_links = soup.select(
+            "div[data-test='section-offers'] a[data-test='link-offer-title']"
+        )  # selector from your original parser :contentReference[oaicite:0]{index=0}
+
+        tasks: List[Dict[str, str]] = []
+        for a in offer_links:
+            href = a.get("href", "")
+            # normalize relative URLs
+            if href.startswith("/"):
+                href = self.base_url + href
+
+            # skip employer-profile links
+            if "pracodawcy.pracuj.pl/company" in href:
+                continue
+
+            # extract numeric ID from URL, fallback to hash
+            m = re.search(r",oferta,(\d+)", href)
+            job_id = m.group(1) if m else str(hash(href))[:8]
+
+            tasks.append({"url": href, "job_id": job_id})
+
+        return tasks
+            
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
     
