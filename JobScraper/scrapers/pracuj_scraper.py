@@ -2,7 +2,7 @@ from typing import List, Dict, Tuple, Set, Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-import re
+import re, math
 import time
 from ..models import JobListing, Skill
 from ..database import insert_job_listing, insert_skill
@@ -289,24 +289,40 @@ class PracujScraper(BaseScraper):
 
     def _get_total_pages(self, html: str) -> int:
         """
-        Parse the pagination controls and return the total number of listing pages.
-        Fallback to a safe default if we can’t detect it.
+        Determine how many listing pages exist:
+         1) Look for a <ul …pagination…> control
+         2) Else parse the total-results count (e.g. "220 oferty")
+         3) Fallback to 1
         """
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
-            if pagination:
-                nums = [
-                    int(li.get_text(strip=True))
-                    for li in pagination.find_all("li")
-                    if li.get_text(strip=True).isdigit()
-                ]
-                if nums:
-                    return max(nums)
-        except Exception:
-            self.logger.warning("Could not parse total pages, defaulting to 1")
-        return 1
+        soup = BeautifulSoup(html, "html.parser")
 
+        # 1) Try classic pagination <ul class="…pagination…">
+        pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
+        if pagination:
+            nums = [
+                int(li.get_text(strip=True))
+                for li in pagination.find_all("li")
+                if li.get_text(strip=True).isdigit()
+            ]
+            if nums:
+                return max(nums)
+
+        # 2) Fallback: parse total-count element
+        # Pracuj.pl shows e.g. "<p data-test='text-searchResultsCount'>220 oferty</p>"
+        count_el = soup.select_one("p[data-test='text-searchResultsCount']")
+        if count_el:
+            text = count_el.get_text(strip=True)
+            m = re.search(r"(\d+)", text.replace(" ", ""))  # remove non-breaking spaces
+            if m:
+                total_offers = int(m.group(1))
+                pages = math.ceil(total_offers / self.EXPECTED_PER_PAGE)
+                self.logger.info(f"Page count from header: {total_offers} offers → {pages} pages")
+                return max(1, pages)
+
+        # 3) Give up
+        self.logger.warning("Could not detect total pages, defaulting to 1")
+        return 1
+        
     def _parse_listings(self, html: str) -> List[Dict[str, str]]:
         """
         Parse a search-results page’s HTML and return a list of tasks,
