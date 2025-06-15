@@ -17,9 +17,11 @@ class PracujScraper(BaseScraper):
     def __init__(self):
         super().__init__()
         self.base_url = "https://www.pracuj.pl"
-        self.search_url = (
+        # Base search URL without any page parameter
+        self.start_url = (
             "https://it.pracuj.pl/praca/warszawa;wp?rd=30&et=3%2C17%2C4&its=big-data-science"
         )
+        self.EXPECTED_PER_PAGE = 60
         # Define skill categories
         self.skill_categories = {
             "Database": [
@@ -286,6 +288,26 @@ class PracujScraper(BaseScraper):
 
         # No valid 1–5 in any bullet → None
         return None
+
+    def _get_total_pages(self, html: str) -> int:
+        """
+        Parse the pagination controls and return the total number of listing pages.
+        Fallback to a safe default if we can’t detect it.
+        """
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
+            if pagination:
+                nums = [
+                    int(li.get_text(strip=True))
+                    for li in pagination.find_all("li")
+                    if li.get_text(strip=True).isdigit()
+                ]
+                if nums:
+                    return max(nums)
+        except Exception:
+            self.logger.warning("Could not parse total pages, defaulting to 1")
+        return 1
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
@@ -331,48 +353,71 @@ class PracujScraper(BaseScraper):
             listing_status="Active",
         )
 
+    def _parse_listings(self, html: str) -> List[Dict[str, str]]:
+        """Return a list of job listing tasks from a search results page"""
+        soup = BeautifulSoup(html, "html.parser")
+        offer_links = soup.select(
+            "div[data-test='section-offers'] a[data-test='link-offer-title']"
+        )
+
+        tasks = []
+        for a in offer_links:
+            href = a["href"]
+            if href.startswith("/"):
+                href = self.base_url + href
+
+            if "pracodawcy.pracuj.pl/company" in href:
+                continue
+
+            m = re.search(r",oferta,(\d+)", href)
+            job_id = m.group(1) if m else str(hash(href))[:8]
+            tasks.append({"url": href, "job_id": job_id})
+
+        return tasks
+
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
-        all_jobs = []
-        all_skills = {}
-        processed = set()
-        current_page = 1
+        all_jobs: List[JobListing] = []
+        all_skills: Dict[str, List[str]] = {}
+        processed: Set[str] = set()
 
-        while True:
-            # 1) Fetch search results page
-            page_url = (
-                self.search_url
-                if current_page == 1
-                else f"{self.search_url}&pn={current_page}"
-            )
-            html = self.get_page_html(page_url)
-            soup = BeautifulSoup(html, "html.parser")
+        # 1) Fetch first page to detect total count
+        first_html = self.get_page_html(self.start_url)
+        total_pages = self._get_total_pages(first_html)
+        self.logger.info(f"Detected {total_pages} listing pages")
 
-            # 2) Gather every job-offer link, ignoring the banner entirely
-            offer_links = soup.select(
-                "div[data-test='section-offers'] a[data-test='link-offer-title']"
-            )
-            if not offer_links:
-                break
+        for page in range(1, total_pages + 1):
+            page_url = self.start_url if page == 1 else f"{self.start_url}&pn={page}"
 
-            # 3) Build tasks from each link found
-            tasks = []
-            for a in offer_links:
-                href = a["href"]
-                if href.startswith("/"):
-                    href = self.base_url + href
+            for attempt in range(1, 4):
+                html = self.get_page_html(page_url)
+                tasks = self._parse_listings(html)
+                # remove already processed links
+                new_tasks = []
+                for t in tasks:
+                    if t["url"] in processed:
+                        continue
+                    processed.add(t["url"])
+                    new_tasks.append(t)
+                tasks = new_tasks
 
-                # skip duplicates & employer-profile links
-                if href in processed or "pracodawcy.pracuj.pl/company" in href:
-                    continue
-                processed.add(href)
+                if len(tasks) >= int(self.EXPECTED_PER_PAGE * 0.8):
+                    self.logger.info(
+                        f"Page {page}: got {len(tasks)} tasks on try #{attempt}"
+                    )
+                    break
+                else:
+                    self.logger.warning(
+                        f"Page {page}: only {len(tasks)} tasks (try {attempt}), retrying…"
+                    )
+                    time.sleep(random.uniform(1, 2))
+            else:
+                self.logger.error(
+                    f"Page {page} still low ({len(tasks)} tasks), moving on"
+                )
 
-                m = re.search(r",oferta,(\d+)", href)
-                job_id = m.group(1) if m else str(hash(href))[:8]
-                tasks.append({"url": href, "job_id": job_id})
+            jobs_this_page: List[JobListing] = []
 
-            jobs_this_page = []
-
-            # 4) Fetch detail pages in manageable batches
+            # 3) Fetch detail pages in manageable batches
             CHUNK_SIZE = 8
             for i in range(0, len(tasks), CHUNK_SIZE):
                 batch = tasks[i : i + CHUNK_SIZE]
@@ -401,9 +446,8 @@ class PracujScraper(BaseScraper):
                     self.logger.info(f"Pausing {pause:.1f}s after batch #{batch_num}…")
                     time.sleep(pause)
 
-            # 5) Persist & next page
+            # 4) Persist results from this page
             all_jobs.extend(jobs_this_page)
-            current_page += 1
 
         return all_jobs, all_skills
 
