@@ -3,7 +3,7 @@
     {
       "type": "timerTrigger",
       "name": "mytimer",
-      "schedule": "0 06 8 * * *"
+      "schedule": "0 38 8 * * *"
     }
   ]
 }
