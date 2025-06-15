@@ -289,14 +289,12 @@ class PracujScraper(BaseScraper):
 
     def _get_total_pages(self, html: str) -> int:
         """
-        Determine how many listing pages exist:
-         1) Look for a <ul …pagination…> control
-         2) Else parse the total-results count (e.g. "220 oferty")
-         3) Fallback to 1
+        (Optional) Parse a known pagination control OR
+        fall back to the total-results count to compute pages.
         """
         soup = BeautifulSoup(html, "html.parser")
 
-        # 1) Try classic pagination <ul class="…pagination…">
+        # 1) Classic <ul class="…pagination…">
         pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
         if pagination:
             nums = [
@@ -307,77 +305,83 @@ class PracujScraper(BaseScraper):
             if nums:
                 return max(nums)
 
-        # 2) Fallback: parse total-count element
-        # Pracuj.pl shows e.g. "<p data-test='text-searchResultsCount'>220 oferty</p>"
+        # 2) Fallback: parse total-offers header
         count_el = soup.select_one("p[data-test='text-searchResultsCount']")
         if count_el:
-            text = count_el.get_text(strip=True)
-            m = re.search(r"(\d+)", text.replace(" ", ""))  # remove non-breaking spaces
+            text = count_el.get_text(strip=True).replace("\u00A0", "")
+            m = re.search(r"(\d+)", text)
             if m:
-                total_offers = int(m.group(1))
-                pages = math.ceil(total_offers / self.EXPECTED_PER_PAGE)
-                self.logger.info(f"Page count from header: {total_offers} offers → {pages} pages")
+                total = int(m.group(1))
+                pages = math.ceil(total / self.EXPECTED_PER_PAGE)
+                self.logger.info(f"Detected {total} offers → {pages} pages")
                 return max(1, pages)
 
-        # 3) Give up
         self.logger.warning("Could not detect total pages, defaulting to 1")
         return 1
-        
+
+
     def _parse_listings(self, html: str) -> List[Dict[str, str]]:
         """
-        Parse a search-results page’s HTML and return a list of tasks,
-        each a dict with 'url' and 'job_id'.
+        Parse a search-results page’s HTML and return
+        a list of {'url':…, 'job_id':…} dicts.
         """
         soup = BeautifulSoup(html, "html.parser")
-        offer_links = soup.select(
+        links = soup.select(
             "div[data-test='section-offers'] a[data-test='link-offer-title']"
-        )  # selector from your original parser :contentReference[oaicite:0]{index=0}
+        )
 
         tasks: List[Dict[str, str]] = []
-        for a in offer_links:
+        for a in links:
             href = a.get("href", "")
-            # normalize relative URLs
             if href.startswith("/"):
                 href = self.base_url + href
-
-            # skip employer-profile links
+            # skip non-offer links
             if "pracodawcy.pracuj.pl/company" in href:
                 continue
 
-            # extract numeric ID from URL, fallback to hash
             m = re.search(r",oferta,(\d+)", href)
             job_id = m.group(1) if m else str(hash(href))[:8]
-
             tasks.append({"url": href, "job_id": job_id})
 
         return tasks
-            
+
+
+    def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
+        """
+        Grab the first integer 1–5 from any <li class="tkzmjn3">.
+        """
+        for li in soup.select("li.tkzmjn3"):
+            txt = li.get_text(" ", strip=True)
+            m = re.search(r"\b([1-5])\b", txt)
+            if m:
+                return int(m.group(1))
+        return None
+
+
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
-    
+
         # — ID inline —
         m = re.search(r",oferta,(\d+)", job_url)
         job_id = m.group(1) if m else str(hash(job_url))[:8]
-    
+
         # — Title —
-        # <h1 data-test="text-positionName">…</h1>
         t = soup.select_one("h1[data-test='text-positionName']")
         title = t.get_text(strip=True) if t else "Unknown Title"
-    
+
         # — Company —
-        # <h2 data-test="text-employerName">…</h2>
         c = soup.select_one("h2[data-test='text-employerName']")
         if c:
             company = "".join(c.find_all(text=True, recursive=False)).strip()
         else:
             company = "Unknown Company"
 
-            # — Badges / Salary / Location —
+        # — Badges / Salary / Location —
         badges = self._extract_badge_info(soup)
-    
+
         # — Years of Experience —
         yoe = self._extract_years_of_experience(soup)
-    
+
         return JobListing(
             job_id=job_id,
             source="pracuj.pl",
@@ -396,81 +400,65 @@ class PracujScraper(BaseScraper):
             listing_status="Active",
         )
 
+
     def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
         """
-        Main scraping entrypoint:
-         1) Detect total pages
-         2) Loop page=1…N with retry (up to 3 tries if <80% of EXPECTED_PER_PAGE)
-         3) Chunk detail-page fetches with pause-every-3-batches
-        Returns: (all_jobs, all_skills)
+        Scrape pracuj.pl pages until an empty page is hit.
+        Retries each listing page up to 3× if it’s under-filled.
         """
-        all_jobs = []
-        all_skills = {}
-
-        # --- 1) Fetch page 1 to detect how many pages exist ---
-        first_url = self.search_url
-        first_html = self.session.get(first_url, timeout=30).text
-        total_pages = self._get_total_pages(first_html)
-        self.logger.info(f"Detected {total_pages} listing pages")
-
-        # --- 2) Paginate with retries ---
-        for page in range(1, total_pages + 1):
-            page_url = f"{self.search_url}&pn={page}"
-            tasks = []
-            for attempt in range(1, 4):    def scrape(self) -> (list, dict):
-        all_jobs = []
-        all_skills = {}
+        all_jobs: List[JobListing] = []
+        all_skills: Dict[str, List[str]] = {}
 
         page = 1
         while True:
             page_url = f"{self.search_url}&pn={page}"
-            tasks = []
+            tasks: List[Dict[str, str]] = []
 
-            # Retry listing page up to 3× if too few results
+            # Retry listings fetch up to 3× if too few
             for attempt in range(1, 4):
                 html = self.session.get(page_url, timeout=30).text
                 tasks = self._parse_listings(html)
-                if len(tasks) == 0:
-                    # no offers at all → we’re past the last page
-                    break
+                if not tasks:
+                    break  # no listings → done
                 if len(tasks) >= int(self.EXPECTED_PER_PAGE * 0.8):
-                    self.logger.info(f"Page {page}: {len(tasks)} listings on try #{attempt}")
+                    self.logger.info(
+                        f"Page {page}: {len(tasks)} listings on try #{attempt}"
+                    )
                     break
                 self.logger.warning(
                     f"Page {page}: only {len(tasks)} listings (try #{attempt}), retrying…"
                 )
                 time.sleep(random.uniform(1, 2))
 
-            # If still empty after retries, we’re done
             if not tasks:
-                self.logger.info(f"No listings found on page {page}, finishing pagination.")
+                self.logger.info(f"No listings on page {page}, stopping pagination.")
                 break
 
-            # Gentle pause between listing pages
-            p = random.uniform(1, 2)
-            self.logger.info(f"Pausing {p:.1f}s after listing page {page}…")
-            time.sleep(p)
+            # polite pause between listing pages
+            sleep_p = random.uniform(1, 2)
+            self.logger.info(f"Pausing {sleep_p:.1f}s after listing page {page}…")
+            time.sleep(sleep_p)
 
-            # Chunked detail-fetch with pause­-every-3­-batches
+            # chunked detail-fetch (pause every 3 batches)
             CHUNK_SIZE = 8
             for i in range(0, len(tasks), CHUNK_SIZE):
                 batch = tasks[i : i + CHUNK_SIZE]
                 with ThreadPoolExecutor(max_workers=len(batch)) as pool:
                     futures = {
-                        pool.submit(self.get_page_html, t["url"]): t for t in batch
+                        pool.submit(self.get_page_html, t["url"]): t
+                        for t in batch
                     }
                     for fut in as_completed(futures):
                         task = futures[fut]
                         detail_html = fut.result(timeout=60)
 
                         job = self._parse_job_detail(detail_html, task["url"])
-                        soup = BeautifulSoup(detail_html, "html.parser")
-                        skills = self._extract_skills_from_listing(soup)
+                        detail_soup = BeautifulSoup(detail_html, "html.parser")
+                        skills = self._extract_skills_from_listing(detail_soup)
 
                         all_jobs.append(job)
                         all_skills[job.job_id] = skills
 
-                # pause only after every 3 batches
                 batch_num = (i // CHUNK_SIZE) + 1
                 if batch_num % 3 == 0 and i + CHUNK_SIZE < len(tasks):
                     w = random.uniform(2, 4)
@@ -482,7 +470,7 @@ class PracujScraper(BaseScraper):
         return all_jobs, all_skills
 
 
-def scrape_pracuj():
-    """Function to run the pracuj.pl scraper"""
+def scrape_pracuj() -> Tuple[List[JobListing], Dict[str, List[str]]]:
+    """Entry-point for your Azure Function to call."""
     scraper = PracujScraper()
     return scraper.scrape()
