@@ -12,7 +12,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 class PracujScraper(BaseScraper):
-    """Scraper for pracuj.pl job board"""
+    EXPECTED_PER_PAGE = 60  # adjust if Pracuj shows a different number
 
     def __init__(self):
         super().__init__()
@@ -286,6 +286,26 @@ class PracujScraper(BaseScraper):
 
         # No valid 1–5 in any bullet → None
         return None
+
+    def _get_total_pages(self, html: str) -> int:
+    """
+    Parse the pagination controls and return the total number of listing pages.
+    Fallback to a safe default if we can’t detect it.
+    """
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
+        if pagination:
+            nums = [
+                int(li.get_text(strip=True))
+                for li in pagination.find_all("li")
+                if li.get_text(strip=True).isdigit()
+            ]
+            if nums:
+                return max(nums)
+    except Exception:
+        self.logger.warning("Could not parse total pages, defaulting to 1")
+    return 1
         
     def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
         soup = BeautifulSoup(html, "html.parser")
@@ -331,48 +351,49 @@ class PracujScraper(BaseScraper):
             listing_status="Active",
         )
 
-    def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
+    def scrape(self) -> (list, dict):
+        """
+        Main scraping entrypoint:
+        1) Detect total pages
+        2) Loop page=1…N with retry (up to 3 tries if <80% of EXPECTED_PER_PAGE)
+        3) Chunk detail-page fetches with pause-every-3-batches
+        Returns: (all_jobs, all_skills)
+        """
         all_jobs = []
         all_skills = {}
-        processed = set()
-        current_page = 1
 
-        while True:
-            # 1) Fetch search results page
-            page_url = (
-                self.search_url
-                if current_page == 1
-                else f"{self.search_url}&pn={current_page}"
-            )
-            html = self.get_page_html(page_url)
-            soup = BeautifulSoup(html, "html.parser")
+        # --- 1) Fetch page 1 to detect how many pages exist ---
+        first_url = self.search_url  # e.g. "https://it.pracuj.pl/praca/…"
+        first_html = self.session.get(first_url, timeout=30).text
+        total_pages = self._get_total_pages(first_html)
+        self.logger.info(f"Detected {total_pages} listing pages")
 
-            # 2) Gather every job-offer link, ignoring the banner entirely
-            offer_links = soup.select(
-                "div[data-test='section-offers'] a[data-test='link-offer-title']"
-            )
-            if not offer_links:
-                break
-
-            # 3) Build tasks from each link found
+        # --- 2) Paginate with retries ---
+        for page in range(1, total_pages + 1):
+            page_url = f"{self.search_url}&pn={page}"
             tasks = []
-            for a in offer_links:
-                href = a["href"]
-                if href.startswith("/"):
-                    href = self.base_url + href
+            for attempt in range(1, 4):
+                html = self.session.get(page_url, timeout=30).text
+                tasks = self._parse_listings(html)  # your existing link extractor
+                count = len(tasks)
+                if count >= int(self.EXPECTED_PER_PAGE * 0.8):
+                    self.logger.info(f"Page {page}: found {count} tasks on try #{attempt}")
+                    break
+                else:
+                    self.logger.warning(
+                        f"Page {page}: only {count} tasks (try #{attempt}), retrying…"
+                    )
+                    time.sleep(random.uniform(1, 2))
+            else:
+                self.logger.error(f"Page {page} still low ({count} tasks); moving on")
 
-                # skip duplicates & employer-profile links
-                if href in processed or "pracodawcy.pracuj.pl/company" in href:
-                    continue
-                processed.add(href)
+            # --- 2a) gentle pause between listing pages ---
+            if page < total_pages:
+                p = random.uniform(1, 2)
+                self.logger.info(f"Pausing {p:.1f}s after listing page {page}…")
+                time.sleep(p)
 
-                m = re.search(r",oferta,(\d+)", href)
-                job_id = m.group(1) if m else str(hash(href))[:8]
-                tasks.append({"url": href, "job_id": job_id})
-
-            jobs_this_page = []
-
-            # 4) Fetch detail pages in manageable batches
+            # --- 3) Chunked detail-fetch with “pause every 3 batches” ---
             CHUNK_SIZE = 8
             for i in range(0, len(tasks), CHUNK_SIZE):
                 batch = tasks[i : i + CHUNK_SIZE]
@@ -384,26 +405,19 @@ class PracujScraper(BaseScraper):
                         task = futures[fut]
                         detail_html = fut.result(timeout=60)
 
-                        # Parse every field from the detail page
                         job = self._parse_job_detail(detail_html, task["url"])
+                        soup = BeautifulSoup(detail_html, "html.parser")
+                        skills = self._extract_skills_from_listing(soup)
 
-                        # Extract skills
-                        detail_soup = BeautifulSoup(detail_html, "html.parser")
-                        skills = self._extract_skills_from_listing(detail_soup)
-
-                        jobs_this_page.append(job)
+                        all_jobs.append(job)
                         all_skills[job.job_id] = skills
 
-                # Only pause after every 3 batches
+                # pause only after every 3 batches
                 batch_num = (i // CHUNK_SIZE) + 1
-                if i + CHUNK_SIZE < len(tasks) and batch_num % 3 == 0:
-                    pause = random.uniform(2, 4)
-                    self.logger.info(f"Pausing {pause:.1f}s after batch #{batch_num}…")
-                    time.sleep(pause)
-
-            # 5) Persist & next page
-            all_jobs.extend(jobs_this_page)
-            current_page += 1
+                if batch_num % 3 == 0 and i + CHUNK_SIZE < len(tasks):
+                    wait = random.uniform(2, 4)
+                    self.logger.info(f"Pausing {wait:.1f}s after batch #{batch_num}…")
+                    time.sleep(wait)
 
         return all_jobs, all_skills
 
