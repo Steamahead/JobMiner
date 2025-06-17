@@ -66,6 +66,17 @@ def run_scraper():
             total_skills += len(skills.get(job.job_id, []))
         total_jobs += len(jobs)
         logging.info(f"Completed pracuj.pl scraper. Found {len(jobs)} jobs.")
+        logging.info("Starting JustJoin.it scraper...")
+        jj_jobs, jj_skills = scrape_justjoin()
+        for job in jj_jobs:
+            new_id = insert_job_listing(job)
+            if not new_id:
+                logging.error(f"Failed to insert job {job.job_id}; skipping its skills")
+                continue
+            process_skills(job, jj_skills.get(job.job_id, []), skill_categories)
+        total_jobs += len(jj_jobs)
+        total_skills += sum(len(s) for s in jj_skills.values())
+        logging.info(f"Completed JustJoin.it scraper. Found {len(jj_jobs)} jobs.")
         
         # Add other scrapers here as we build them
         
