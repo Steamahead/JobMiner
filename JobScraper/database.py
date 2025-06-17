@@ -70,7 +70,7 @@ def create_tables_if_not_exist():
                 Location NVARCHAR(255) NOT NULL,
                 OperatingMode NVARCHAR(255) NOT NULL,
                 WorkType NVARCHAR(50) NOT NULL,
-                ExperienceLevel NVARCHAR(255) NOT NULL,
+                ExperienceLevel NVARCHAR(MAX) NOT NULL,
                 EmploymentType NVARCHAR(50) NOT NULL,
                 YearsOfExperience INT NULL,
                 ScrapeDate DATETIME NOT NULL,
