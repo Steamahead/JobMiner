@@ -8,6 +8,7 @@ from .models import JobListing, Skill
 
 # Import individual scrapers
 from .scrapers.pracuj_scraper import scrape_pracuj
+from .scrapers.justjoin_scraper import scrape_justjoin
 # Add more scrapers as they are implemented
 # from .scrapers.justjoin_scraper import scrape_justjoin
 # from .scrapers.nofluffjobs_scraper import scrape_nofluffjobs
