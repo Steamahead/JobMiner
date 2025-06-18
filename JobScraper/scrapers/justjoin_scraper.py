@@ -3,7 +3,9 @@ import json
 import re
 import time
 from bs4 import BeautifulSoup
-from scraper import BaseScraper, insert_job_listing, PAGE_SIZE
+from core.base_scraper   import BaseScraper
+from core.database       import insert_job_listing, insert_skill
+from core.models         import JobListing, Skill
 
 class JustJoinScraper(BaseScraper):
     """
