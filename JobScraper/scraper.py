@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import List
 import traceback
 
-from core.database import create_tables_if_not_exist, insert_job_listing, insert_skill
-from core.models   import JobListing, Skill
+from .database import create_tables_if_not_exist, insert_job_listing, insert_skill
+from .models import JobListing, Skill
 
 # Import individual scrapers
 from .scrapers.pracuj_scraper import scrape_pracuj
