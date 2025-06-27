@@ -2,7 +2,7 @@ from typing import Optional
 import os
 import logging
 from datetime import datetime
-from .models import JobListing, Skill
+from models import JobListing, Skill
 
 
 def _truncate(value: Optional[str], length: int) -> Optional[str]:
