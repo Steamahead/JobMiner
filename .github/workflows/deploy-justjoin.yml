@@ -1,0 +1,30 @@
+name: Deploy JustJoin Scraper
+
+on:
+  push:
+    paths:
+      - 'JobMiner/JobScraper/justjoin-scraper/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          cd JobMiner/JobScraper/justjoin-scraper
+          pip install -r requirements.txt
+
+      - name: Deploy to Azure Functions (JustJoin)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: JustJoinScraper  # <– your JustJoin Function App name
+          package: JobMiner/JobScraper/justjoin-scraper
