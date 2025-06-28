@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd JobScraper/pracuj-scraper
-          pip install -r requirements.txt
+          pip install -r ../../requirements.txt
 
       - name: Deploy to Azure Functions (Pracuj)
         uses: Azure/functions-action@v1
