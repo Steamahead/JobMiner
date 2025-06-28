@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Tuple, Set, TYPE_CHECKING
 if TYPE_CHECKING:
-    from .models import JobListing
+    from ..models import JobListing
 import logging
 import requests
 import sys
