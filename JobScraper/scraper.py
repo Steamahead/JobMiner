@@ -7,7 +7,10 @@ from .database import create_tables_if_not_exist, insert_job_listing, insert_ski
 from .models import JobListing, Skill
 
 # Import individual scrapers
-from .scrapers.pracuj_scraper import scrape_pracuj
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'pracuj-scraper'))
+from pracuj_scraper import scrape_pracuj
 # Add more scrapers as they are implemented
 # from .scrapers.justjoin_scraper import scrape_justjoin
 # from .scrapers.nofluffjobs_scraper import scrape_nofluffjobs
@@ -37,7 +40,7 @@ def run_scraper():
     logging.info(f"Starting job scraper at {start_time}")
     
     # Get skill categories from the pracuj scraper to ensure consistency
-    from .scrapers.pracuj_scraper import PracujScraper
+    from pracuj_scraper import PracujScraper
     temp_scraper = PracujScraper()
     skill_categories = temp_scraper.skill_categories
     
