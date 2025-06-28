@@ -20,8 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd JobScraper/justjoin-scraper
-          pip install -r ../../requirements.txt
+          pip install -r requirements.txt
 
       - name: Deploy to Azure Functions (JustJoin)
         uses: Azure/functions-action@v1
