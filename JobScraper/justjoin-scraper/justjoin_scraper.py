@@ -3,6 +3,9 @@ import json
 import re
 import time
 from bs4 import BeautifulSoup
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from base_scraper   import BaseScraper
 from database       import insert_job_listing, insert_skill
 from models         import JobListing, Skill

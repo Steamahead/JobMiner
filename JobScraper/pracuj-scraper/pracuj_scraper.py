@@ -6,7 +6,7 @@ import re, math
 import time
 from ..models import JobListing, Skill
 from ..database import insert_job_listing, insert_skill
-from .base_scraper import BaseScraper
+from ..base_scraper import BaseScraper
 import random, os, tempfile, uuid
 from datetime import datetime
 from bs4 import BeautifulSoup
