@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from base_scraper   import BaseScraper
 from database       import insert_job_listing, insert_skill
 from models         import JobListing, Skill
-#from datetime import datetime
+from datetime import datetime
 PAGE_SIZE = 20       # define how many listings per “page” – JustJoin returns ~17 per offset
 
 class JustJoinScraper(BaseScraper):
@@ -99,22 +99,26 @@ class JustJoinScraper(BaseScraper):
                             years_of_experience = int(match.group(1))
                 break
 
-        # Insert into DB
-        insert_job_listing(
+        job = JobListing(
+            job_id=url.split('/')[-1],
             source='justjoin',
-            external_id=url.split('/')[-1],
             title=title,
             company=company,
-            location=location,
-            published_date=published_date,
+            link=url,
             salary_min=salary_min,
             salary_max=salary_max,
+            location=location,
             operating_mode=operating_mode,
             work_type=work_type,
             experience_level=experience_level,
             employment_type=employment_type,
-            years_of_experience=years_of_experience
+            years_of_experience=years_of_experience,
+            scrape_date=datetime.now(),
+            listing_status='Active'
         )
+
+        # Insert into DB
+        insert_job_listing(job)
 
 if __name__ == '__main__':
     scraper = JustJoinScraper()
