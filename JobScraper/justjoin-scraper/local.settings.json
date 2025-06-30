@@ -1,8 +1,0 @@
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "SQL_CONN_STR": "Driver={ODBC Driver 17 for SQL Server};Server=localhost;Database=JobDB;UID=sa;PWD=YourPassword;"
-  }
-}
