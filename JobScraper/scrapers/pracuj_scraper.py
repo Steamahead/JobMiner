@@ -1,259 +1,476 @@
-import csv
-import json
+from typing import List, Dict, Tuple, Set, Optional
 import logging
-import os
-import re
-from datetime import datetime
-
-import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+import re, math
+import time
+from ..models import JobListing, Skill
+from ..database import insert_job_listing, insert_skill
+from .base_scraper import BaseScraper
+import random, os, tempfile, uuid
+from datetime import datetime
 from bs4 import BeautifulSoup
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+class PracujScraper(BaseScraper):
+    EXPECTED_PER_PAGE = 60  # adjust if Pracuj shows a different number
 
-
-class PracujScraper:
-    """
-    A class to scrape job offers from pracuj.pl, process them, and save to CSV.
-    """
-
-    def __init__(self, output_filename="job_offers.csv"):
-        """
-        Initializes the PracujScraper with skill categories and other attributes.
-        """
-        self.base_url = "https://it.pracuj.pl/praca?et=3%2C17%2C4&its=big-data-science"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
-        }
-        self.jobs_data = []
-        self.output_filename = output_filename
-        self.processed_urls = self.load_processed_urls()
-        # --- Skill Categories ---
+    def __init__(self):
+        super().__init__()
+        self.base_url = "https://www.pracuj.pl"
+        self.search_url = (
+            "https://it.pracuj.pl/praca?et=3%2C17%2C4&its=big-data-science"
+        )
+        # Define skill categories
         self.skill_categories = {
-            "Database": ["sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database", "ms access", "sqlite", "redshift", "snowflake", "microsoft sql server", "teradata", "clickhouse", "azure sql database", "azure sql managed instance", "mariadb", "ms sql", "sql i pl/sql", "oracle forms", "oracle apex", "oracle ebs", "oracle application framework (oaf)", "oracle erp cloud", "sql server", "mssqlserver", "azure sql", "pl/pgsql", "aas", "neteza", "singlestore", "oracle fusion middleware", "oracle jdeveloper"],
-            "Microsoft BI & Excel": ["excel", "power query", "power pivot", "vba", "macros", "pivot tables", "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas", "power apps", "power automate", "powerpoint", "office 365", "microsoft power bi", "power bi", "power bi.", "ms office", "ms excel", "microsoft dynamics 365", "ms fabric"],
-            "Visualization": ["tableau", "qlik", "looker", "data studio", "powerbi", "dax", "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting", "d3.js", "grafana", "kibana", "google charts", "quicksight", "sas viya", "di studio", "eg", "sas studio", "visual analytics", "qliksense", "sas va", "qgis", "visio"],
-            "Programming": ["python", "r", "java", "scala", "c#", ".net", "javascript", "typescript", "pandas", "numpy", "jupyter", "scikit-learn", "tidyverse", "julia", "sql scripting", "pl/sql", "t-sql", "linux", "windows", "unix", "windows server", "macos", "shell", "perl", "pyspark", "go", "rust", "c++", "c", "jee", "scala 3", "next.js", "fastapi", "rest", "spring framework", "css", "html", "u-boot", "yocto", "sas4gl", "mql5", "xml", "uml", "bpmn", "golang", "graphql", "spring boot", "hibernate", "flask api", "pytest", "junit", "liquibase", "jest", "angular", "vue.js", "ngrx", "swagger"],
-            "Data Processing": ["etl", "spark", "hadoop", "kafka", "airflow", "data engineering", "big data", "data cleansing", "data transformation", "data modeling", "data warehouse", "databricks", "dbt", "talend", "informatica", "apache spark", "starrocks", "iceberg", "bigquery", "matillion", "data built tool", "apache airflow", "data lake", "adf", "azure data factory", "azure data lake", "parquet", "dwh", "elt/elt", "apache kafka", "alteryx", "azure databricks", "synapse analytics", "informatica cloud"],
-            "Analytics & Statistics": ["statistics", "regression", "forecasting", "analytics", "analysis", "spss", "sas", "stata", "hypothesis testing", "a/b testing", "statistical", "time series", "clustering", "segmentation", "correlation", "adobe analytics", "google analytics", "sas di", "sas eg", "sas 4gl", "sas macro language", "data science", "data analytics"],
-            "Cloud": ["aws", "azure", "gcp", "google cloud", "cloud", "onedrive", "sharepoint", "snowflake", "lambda", "s3", "pub/sub", "dataflow", "terraform", "google cloud services (big query)", "microsoft azure", "snowflake data cloud", "google cloud platform", "sap datasphere", "azure synapse", "azure functions", "azure repos", "microsoft  azure", "redis", "azure event hub", "ansible", "terragrunt", "vertex ai", "sagemaker", "azure devops"],
-            "Business Intelligence": ["business intelligence", "bi", "cognos", "business objects", "microstrategy", "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense", "bi publisher", "mis"],
-            "Machine Learning and AI": ["machine learning", "scikit-learn", "tensorflow", "keras", "pytorch", "deep learning", "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering", "opencv", "langchain", "pydantic", "langgraph", "hugging face ml tools", "mlops", "dagster", "llm", "ai", "ml", "transformers", "openai api", "tensorrt", "seldon", "onnx", "cap n proto", "llamaindex", "mlflow", "kubeflow", "vllm", "pinecone", "faiss", "chroma", "llm/nlp", "sciklit-learn", "palantir foundry"],
-            "Data Governance and Quality": ["data governance", "data quality", "data integrity", "data validation", "master data management", "metadata", "data lineage", "data catalog", "atlan", "collibra", "cdi", "cai", "cdgc"],
-            "Data Privacy and Security": ["data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization"],
-            "Project Management and Soft Skills": ["project management", "agile", "scrum", "communication", "presentation", "storytelling", "collaboration", "stakeholder management", "requirements gathering", "jira", "confluence", "agile methodologies", "servicenow", "bugzilla", "otrs"],
-            "Version Control": ["git", "github", "gitlab", "bitbucket", "svn"],
-            "Data Integration and APIs": ["api", "rest api", "data integration", "web scraping", "etl tools", "soap", "ip rotation services", "google python apis", "rest apis", "soapui", "oracle service bus", "oracle soa"],
-            "ERP and CRM Systems": ["sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday"],
-            "DevOps": ["jenkins", "openshift", "docker", "kubernetes", "bamboo", "ci/cd", "maven", "gradle", "sonarqube", "argocd", "jenkins / ansible", "controlm", "liquiibase", "sonar"]
+            "Database": [
+                "sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database",
+                "ms access", "sqlite", "redshift", "snowflake", "microsoft sql server",
+                "teradata", "clickhouse",
+            ],
+            "Microsoft BI & Excel": [
+                "excel", "power query", "power pivot", "vba", "macros", "pivot tables",
+                "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas",
+                "power apps", "power automate", "powerpoint", "office 365",
+            ],
+            "Visualization": [
+                "power bi", "tableau", "qlik", "looker", "data studio", "powerbi", "dax",
+                "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting",
+                "d3.js", "grafana", "kibana", "google charts", "quicksight",
+            ],
+            "Programming": [
+                "python", "r", "java", "scala", "c#", ".net", "javascript", "typescript",
+                "vba", "pandas", "numpy", "jupyter", "scikit-learn", "tidyverse", "julia",
+                "sql scripting", "pl/sql", "t-sql",
+            ],
+            "Data Processing": [
+                "etl", "spark", "hadoop", "kafka", "airflow", "data engineering", "big data",
+                "data cleansing", "data transformation", "data modeling", "data warehouse",
+                "databricks", "dbt", "talend", "informatica",
+            ],
+            "Analytics & Statistics": [
+                "statistics", "regression", "forecasting", "analytics", "analysis", "spss",
+                "sas", "stata", "hypothesis testing", "a/b testing", "statistical",
+                "time series", "clustering", "segmentation", "correlation",
+            ],
+            "Cloud": [
+                "aws", "azure", "gcp", "google cloud", "cloud", "onedrive", "sharepoint",
+                "snowflake", "databricks", "lambda", "s3",
+            ],
+            "Business Intelligence": [
+                "business intelligence", "bi", "cognos", "business objects", "microstrategy",
+                "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense",
+            ],
+            "Machine Learning and AI": [
+                "machine learning", "scikit-learn", "tensorflow", "keras", "pytorch", "deep learning",
+                "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering",
+            ],
+            "Data Governance and Quality": [
+                "data governance", "data quality", "data integrity", "data validation",
+                "master data management", "metadata", "data lineage", "data catalog",
+            ],
+            "Data Privacy and Security": [
+                "data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization",
+            ],
+            "Project Management and Soft Skills": [
+                "project management", "agile", "scrum", "communication", "presentation", "storytelling",
+                "collaboration", "stakeholder management", "requirements gathering", "jira", "confluence",
+            ],
+            "Version Control": [
+                "git", "github", "gitlab", "version control", "bitbucket",
+            ],
+            "Data Integration and APIs": [
+                "api", "rest api", "data integration", "web scraping", "etl tools", "soap", "ip rotation services",
+            ],
+            "ERP and CRM Systems": [
+                "sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday",
+            ],
         }
 
-    def load_processed_urls(self):
+    def _extract_salary(self, salary_text: str) -> Tuple[Optional[int], Optional[int]]:
+        """Extract min and max salary from salary text, handling hourly rates"""
+        if not salary_text:
+            return None, None
+
+        clean_text = salary_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+        # Detect if this was "per hour" by looking for zł/h or zł/godz
+        is_hourly = 'zł/h' in clean_text or 'zł/godz' in clean_text
+        clean_text = re.sub(r'[^\d,\.\-–]', '', clean_text)
+
+        # Look for patterns like "12000–20000" or "150,00-180,00"
+        match = re.search(r'([\d\.,]+)[–\-]([\d\.,]+)', clean_text)
+        if match:
+            try:
+                min_val = match.group(1).replace(',', '.')
+                max_val = match.group(2).replace(',', '.')
+                min_salary = float(min_val)
+                max_salary = float(max_val)
+
+                if is_hourly:
+                    # Convert hourly to monthly by assuming 160h/month
+                    min_salary *= 160
+                    max_salary *= 160
+
+                return int(min_salary), int(max_salary)
+            except ValueError:
+                pass
+
+        # If only a single number
+        match = re.search(r'([\d\.,]+)', clean_text)
+        if match:
+            try:
+                val = match.group(1).replace(',', '.')
+                salary = float(val)
+                if is_hourly:
+                    salary *= 160
+                return int(salary), int(salary)
+            except ValueError:
+                pass
+
+        return None, None
+
+    def _extract_badge_info(self, soup: BeautifulSoup) -> Dict[str,object]:
         """
-        Loads already processed URLs from the CSV file to avoid duplicates.
+        Extract SalaryMin/SalaryMax, Location, OperatingMode,
+        WorkType, ExperienceLevel, EmploymentType from the in-offer
+        benefit list + salary section.
         """
-        if not os.path.exists(self.output_filename):
-            return set()
-        try:
-            df = pd.read_csv(self.output_filename)
-            return set(df["Job Offer URL"].tolist())
-        except pd.errors.EmptyDataError:
-            return set()
+        result = {
+            "SalaryMin":       None,
+            "SalaryMax":       None,
+            "Location":        "",
+            "OperatingMode":   "",
+            "WorkType":        "",
+            "ExperienceLevel": "",
+            "EmploymentType":  "",
+        }
+    
+        base = 'ul[data-test="sections-benefit-list"] li[data-test="{dt}"] div[data-test="offer-badge-title"]'
+    
+        # Location: office first, else remote
+        off = soup.select_one(base.format(dt="sections-benefit-workplaces"))
+        wp  = soup.select_one(base.format(dt="sections-benefit-workplaces-wp"))
+        if off:
+            result["Location"] = off.get_text(strip=True)
+        elif wp:
+            result["Location"] = wp.get_text(strip=True)
+    
+        # EmploymentType (contract)
+        et = soup.select_one(base.format(dt="sections-benefit-contracts"))
+        if et:
+            result["EmploymentType"] = et.get_text(strip=True)
+    
+        # WorkType (schedule)
+        ws = soup.select_one(base.format(dt="sections-benefit-work-schedule"))
+        if ws:
+            result["WorkType"] = ws.get_text(strip=True)
+    
+        # ExperienceLevel (seniority)
+        ex = soup.select_one(base.format(dt="sections-benefit-employment-type-name"))
+        if ex:
+            result["ExperienceLevel"] = ex.get_text(strip=True)
+    
+        # OperatingMode (mode)
+        om = soup.select_one(base.format(dt="sections-benefit-work-modes-many"))
+        if om:
+            result["OperatingMode"] = om.get_text(strip=True)
+        
+        # Fallback: first div[data-test="offer-badge-title"] not already used for other fields
+        if not result["OperatingMode"]:
+            all_badges = soup.select('div[data-test="offer-badge-title"]')
+            for div in all_badges:
+                text = div.get_text(strip=True)
+                # Avoid duplicates of Location, WorkType, etc.
+                if text not in result.values():
+                    result["OperatingMode"] = text
+                    break
 
-    def get_total_pages(self):
-        """
-        Determines the total number of pages to scrape.
-        """
-        try:
-            response = requests.get(self.base_url, headers=self.headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
-            # Find the script tag with id '__NEXT_DATA__'
-            script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
-            if not script_tag:
-                logging.warning("Could not find the '__NEXT_DATA__' script tag.")
-                return 1
-            json_data = json.loads(script_tag.string)
-            # Navigate through the JSON structure to get page count
-            page_count = json_data.get('props', {}).get('pageProps', {}).get('pageCount')
-            if page_count:
-                logging.info(f"Total pages to scrape: {page_count}")
-                return page_count
-            else:
-                logging.warning("Could not determine total number of pages. Scraping only the first page.")
-                return 1
-        except requests.RequestException as e:
-            logging.error(f"Error fetching total pages: {e}")
-            return 1
-        except (ValueError, KeyError) as e:
-            logging.error(f"Error parsing JSON for page count: {e}")
-            return 1
+        # SalaryMin & SalaryMax
+        sal = soup.select_one(
+            'div[data-test="section-salary"] div[data-test="text-earningAmount"]'
+        )
+        if sal:
+            mn, mx = self._extract_salary(sal.get_text(" ", strip=True))
+            result["SalaryMin"], result["SalaryMax"] = mn, mx
+    
+        return result
 
-    def scrape_page(self, page_num):
-        """
-        Scrapes a single page of job offers.
-        """
-        page_url = f"{self.base_url}&pn={page_num}"
-        try:
-            response = requests.get(page_url, headers=self.headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
-            # Find the script tag with id '__NEXT_DATA__'
-            script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
-            if not script_tag:
-                logging.warning(f"Could not find the '__NEXT_DATA__' script tag on page {page_num}.")
-                return
-            json_data = json.loads(script_tag.string)
-            # Navigate to the job offers list
-            job_offers = json_data.get('props', {}).get('pageProps', {}).get('jobOffers', [])
-            if not job_offers:
-                logging.warning(f"No job offers found on page {page_num}.")
-                return
 
-            for job in job_offers:
-                job_url = job.get('offerUrl')
-                if job_url and job_url not in self.processed_urls:
-                    self.scrape_job_details(job_url)
-                elif job_url:
-                    logging.info(f"Skipping already processed job: {job_url}")
+    def _extract_skills_from_listing(self, soup: BeautifulSoup) -> List[str]:
+        """Extract skills from the dedicated skills section and/or description"""
+        found_skills = set()
 
-        except requests.RequestException as e:
-            logging.error(f"Error scraping page {page_num}: {e}")
-        except (ValueError, KeyError) as e:
-            logging.error(f"Error parsing JSON on page {page_num}: {e}")
+        # Check the dedicated skills section
+        skills_section = soup.find("ul", attrs={"data-test": "aggregate-open-dictionary-model"})
+        if skills_section:
+            skill_items = skills_section.find_all("li", class_="catru5k")
+            for item in skill_items:
+                skill_text = item.get_text(strip=True).lower()
+                found_skills.add(skill_text)
 
-    def scrape_job_details(self, job_url):
-        """
-        Scrapes details from a single job offer page.
-        """
-        try:
-            response = requests.get(job_url, headers=self.headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
-            script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
+        # If few/no skills found, check the description bullets
+        if len(found_skills) < 2:
+            description_section = soup.find("ul", attrs={"data-test": "aggregate-bullet-model"})
+            if description_section:
+                bullet_items = description_section.find_all("li", class_="tkzmjn3")
+                description_text = " ".join([item.get_text(strip=True) for item in bullet_items])
+                desc_skills = self._extract_skills_from_text(description_text)
+                found_skills.update(desc_skills)
 
-            if not script_tag:
-                logging.warning(f"Could not find the '__NEXT_DATA__' script tag on job page: {job_url}")
-                return
+        # Fallback: search the entire page content
+        if len(found_skills) < 2:
+            page_text = soup.get_text()
+            desc_skills = self._extract_skills_from_text(page_text)
+            found_skills.update(desc_skills)
 
-            json_data = json.loads(script_tag.string)
-            job_details = json_data.get('props', {}).get('pageProps', {}).get('jobOffer', {})
+        mapped_skills = self._map_to_standard_skills(found_skills)
+        return list(mapped_skills)
 
-            if not job_details:
-                logging.warning(f"No job details found for URL: {job_url}")
-                return
-
-            # Extracting the required details from the JSON object
-            job_title = job_details.get('jobTitle', 'N/A')
-            company_name = job_details.get('companyName', 'N/A')
-            work_mode = job_details.get('workModes', [{}])[0].get('label', 'N/A')
-            employment_types = ', '.join([e.get('label', '') for e in job_details.get('employmentTypes', [])])
-            experience_level = ', '.join([e.get('label', '') for e in job_details.get('levels', [])])
-            contract_type = ', '.join([e.get('label', '') for e in job_details.get('contracts', [])])
-
-            # Address extraction is complex due to various possible structures
-            workplace = job_details.get('workplaces', [{}])[0]
-            city = workplace.get('city', 'N/A')
-            street = workplace.get('street', {}).get('label')
-            address = f"{street}, {city}" if street else city
-
-            # Main technologies / skills extraction
-            tech_stack = [tech.get('label', '') for tech in job_details.get('technologies', [])]
-            offer_text = ' '.join([str(val) for val in job_details.values()]).lower()
-
-            categorized_skills = self.categorize_skills(tech_stack, offer_text)
-
-            current_date = datetime.now().strftime("%Y-%m-%d")
-
-            job_data = {
-                "Date Scraped": current_date,
-                "Job Title": job_title,
-                "Company Name": company_name,
-                "City": city,
-                "Address": address,
-                "Work Mode": work_mode,
-                "Employment Type": employment_types,
-                "Experience Level": experience_level,
-                "Contract Type": contract_type,
-                "Job Offer URL": job_url,
-                **categorized_skills
-            }
-            self.jobs_data.append(job_data)
-            self.processed_urls.add(job_url)  # Add to processed URLs
-            logging.info(f"Successfully scraped: {job_title} at {company_name}")
-
-        except requests.RequestException as e:
-            logging.error(f"Error scraping job details from {job_url}: {e}")
-        except (ValueError, KeyError) as e:
-            logging.error(f"Error parsing job details JSON from {job_url}: {e}")
-
-    def categorize_skills(self, tech_stack, offer_text):
-        """
-        Categorizes skills based on predefined lists.
-        """
-        categorized = {category: [] for category in self.skill_categories}
-        all_skills = set(skill.lower() for skill in tech_stack)
-
-        # Simple text search for skills in the offer text
+    def _extract_skills_from_text(self, text: str) -> Set[str]:
+        """Extract skills from description text"""
+        all_skills = []
         for category, skills in self.skill_categories.items():
-            for skill in skills:
-                if f' {skill} ' in f' {offer_text} ':
-                    all_skills.add(skill)
+            all_skills.extend(skills)
 
-        # Categorize the found skills
+        found_skills = set()
+        text_lower = text.lower()
+
         for skill in all_skills:
-            for category, skill_list in self.skill_categories.items():
-                if skill in skill_list:
-                    categorized[category].append(skill)
-                    break  # Move to the next skill once categorized
+            pattern = r'\b{}\b'.format(re.escape(skill))
+            if re.search(pattern, text_lower):
+                found_skills.add(skill)
 
-        # Convert lists to comma-separated strings
-        for category in categorized:
-            categorized[category] = ', '.join(sorted(list(set(categorized[category]))))
+        return found_skills
 
-        return categorized
+    def _map_to_standard_skills(self, raw_skills: Set[str]) -> Set[str]:
+        """Map raw skill texts to our standardized skill names"""
+        mapped_skills = set()
 
-    def save_to_csv(self):
+        # Simplified skill variations for key skills
+        skill_variations = {
+            "sql": ["sql", "structured query language", "sql server", "t-sql"],
+            "python": ["python", "język python"],
+            "power bi": ["power bi", "powerbi", "power-bi"],
+            "excel": ["excel", "microsoft excel", "ms excel"],
+            "tableau": ["tableau"],
+            "java": ["java"],
+            "javascript": ["javascript", "js"],
+            "azure": ["azure", "microsoft azure"],
+            "aws": ["aws", "amazon web services"],
+        }
+
+        for raw_skill in raw_skills:
+            # Direct match to a standard skill
+            for category, skills in self.skill_categories.items():
+                if raw_skill in skills:
+                    mapped_skills.add(raw_skill)
+                    break
+
+            # Check for variations
+            for standard_skill, variations in skill_variations.items():
+                if raw_skill in variations:
+                    mapped_skills.add(standard_skill)
+                    break
+
+        return mapped_skills
+
+    def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
         """
-        Saves the scraped data to a CSV file.
+        Grab the first integer 1–5 from any <li class="tkzmjn3"> item.
+        Return None if no 1–5 is found.
         """
-        if not self.jobs_data:
-            logging.info("No new job offers to save.")
-            return
+        for li in soup.select("li.tkzmjn3"):
+            text = li.get_text(" ", strip=True)
+            m = re.search(r"\b([1-5])\b", text)
+            if m:
+                return int(m.group(1))
 
-        # Prepare headers: standard fields + all skill categories
-        fieldnames = [
-                         "Date Scraped", "Job Title", "Company Name", "City", "Address", "Work Mode",
-                         "Employment Type", "Experience Level", "Contract Type", "Job Offer URL"
-                     ] + sorted(list(self.skill_categories.keys()))
+        # No valid 1–5 in any bullet → None
+        return None
 
-        file_exists = os.path.exists(self.output_filename)
-        try:
-            with open(self.output_filename, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                if not file_exists or os.path.getsize(self.output_filename) == 0:
-                    writer.writeheader()
-                writer.writerows(self.jobs_data)
-            logging.info(f"Successfully appended {len(self.jobs_data)} new job offers to {self.output_filename}")
-        except IOError as e:
-            logging.error(f"Error saving data to CSV: {e}")
-
-    def run(self):
+    def _get_total_pages(self, html: str) -> int:
         """
-        Runs the full scraping process.
+        (Optional) Parse a known pagination control OR
+        fall back to the total-results count to compute pages.
         """
-        logging.info("Starting the scraper.")
-        total_pages = self.get_total_pages()
-        if total_pages > 0:
-            for page_num in range(1, total_pages + 1):
-                logging.info(f"Scraping page {page_num}/{total_pages}...")
-                self.scrape_page(page_num)
-            self.save_to_csv()
-        logging.info("Scraping finished.")
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 1) Classic <ul class="…pagination…">
+        pagination = soup.find("ul", class_=lambda c: c and "pagination" in c)
+        if pagination:
+            nums = [
+                int(li.get_text(strip=True))
+                for li in pagination.find_all("li")
+                if li.get_text(strip=True).isdigit()
+            ]
+            if nums:
+                return max(nums)
+
+        # 2) Fallback: parse total-offers header
+        count_el = soup.select_one("p[data-test='text-searchResultsCount']")
+        if count_el:
+            text = count_el.get_text(strip=True).replace("\u00A0", "")
+            m = re.search(r"(\d+)", text)
+            if m:
+                total = int(m.group(1))
+                pages = math.ceil(total / self.EXPECTED_PER_PAGE)
+                self.logger.info(f"Detected {total} offers → {pages} pages")
+                return max(1, pages)
+
+        self.logger.warning("Could not detect total pages, defaulting to 1")
+        return 1
 
 
-# Main execution block
-if __name__ == "__main__":
+    def _parse_listings(self, html: str) -> List[Dict[str, str]]:
+        """
+        Parse a search-results page’s HTML and return
+        a list of {'url':…, 'job_id':…} dicts.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        links = soup.select(
+            "div[data-test='section-offers'] a[data-test='link-offer-title']"
+        )
+
+        tasks: List[Dict[str, str]] = []
+        for a in links:
+            href = a.get("href", "")
+            if href.startswith("/"):
+                href = self.base_url + href
+            # skip non-offer links
+            if "pracodawcy.pracuj.pl/company" in href:
+                continue
+
+            m = re.search(r",oferta,(\d+)", href)
+            job_id = m.group(1) if m else str(hash(href))[:8]
+            tasks.append({"url": href, "job_id": job_id})
+
+        return tasks
+
+
+    def _extract_years_of_experience(self, soup: BeautifulSoup) -> Optional[int]:
+        """
+        Grab the first integer 1–5 from any <li class="tkzmjn3">.
+        """
+        for li in soup.select("li.tkzmjn3"):
+            txt = li.get_text(" ", strip=True)
+            m = re.search(r"\b([1-5])\b", txt)
+            if m:
+                return int(m.group(1))
+        return None
+
+
+    def _parse_job_detail(self, html: str, job_url: str) -> JobListing:
+        soup = BeautifulSoup(html, "html.parser")
+
+        # — ID inline —
+        m = re.search(r",oferta,(\d+)", job_url)
+        job_id = m.group(1) if m else str(hash(job_url))[:8]
+
+        # — Title —
+        t = soup.select_one("h1[data-test='text-positionName']")
+        title = t.get_text(strip=True) if t else "Unknown Title"
+
+        # — Company —
+        c = soup.select_one("h2[data-test='text-employerName']")
+        if c:
+            company = "".join(c.find_all(text=True, recursive=False)).strip()
+        else:
+            company = "Unknown Company"
+
+        # — Badges / Salary / Location —
+        badges = self._extract_badge_info(soup)
+
+        # — Years of Experience —
+        yoe = self._extract_years_of_experience(soup)
+
+        return JobListing(
+            job_id=job_id,
+            source="pracuj.pl",
+            title=title,
+            company=company,
+            link=job_url,
+            salary_min=badges["SalaryMin"],
+            salary_max=badges["SalaryMax"],
+            location=badges["Location"],
+            operating_mode=badges["OperatingMode"],
+            work_type=badges["WorkType"],
+            experience_level=badges["ExperienceLevel"],
+            employment_type=badges["EmploymentType"],
+            years_of_experience=yoe,
+            scrape_date=datetime.now(),
+            listing_status="Active",
+        )
+
+
+    def scrape(self) -> Tuple[List[JobListing], Dict[str, List[str]]]:
+        """
+        Scrape pracuj.pl pages until an empty page is hit.
+        Retries each listing page up to 3× if it’s under-filled.
+        """
+        all_jobs: List[JobListing] = []
+        all_skills: Dict[str, List[str]] = {}
+
+        page = 1
+        while True:
+            page_url = f"{self.search_url}&pn={page}"
+            tasks: List[Dict[str, str]] = []
+
+            # Retry listings fetch up to 3× if too few
+            for attempt in range(1, 4):
+                html = self.session.get(page_url, timeout=30).text
+                tasks = self._parse_listings(html)
+                if not tasks:
+                    break  # no listings → done
+                if len(tasks) >= int(self.EXPECTED_PER_PAGE * 0.8):
+                    self.logger.info(
+                        f"Page {page}: {len(tasks)} listings on try #{attempt}"
+                    )
+                    break
+                self.logger.warning(
+                    f"Page {page}: only {len(tasks)} listings (try #{attempt}), retrying…"
+                )
+                time.sleep(random.uniform(1, 2))
+
+            if not tasks:
+                self.logger.info(f"No listings on page {page}, stopping pagination.")
+                break
+
+            # polite pause between listing pages
+            sleep_p = random.uniform(1, 2)
+            self.logger.info(f"Pausing {sleep_p:.1f}s after listing page {page}…")
+            time.sleep(sleep_p)
+
+            # chunked detail-fetch (pause every 3 batches)
+            CHUNK_SIZE = 8
+            for i in range(0, len(tasks), CHUNK_SIZE):
+                batch = tasks[i : i + CHUNK_SIZE]
+                with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+                    futures = {
+                        pool.submit(self.get_page_html, t["url"]): t
+                        for t in batch
+                    }
+                    for fut in as_completed(futures):
+                        task = futures[fut]
+                        detail_html = fut.result(timeout=60)
+
+                        job = self._parse_job_detail(detail_html, task["url"])
+                        detail_soup = BeautifulSoup(detail_html, "html.parser")
+                        skills = self._extract_skills_from_listing(detail_soup)
+
+                        all_jobs.append(job)
+                        all_skills[job.job_id] = skills
+
+                batch_num = (i // CHUNK_SIZE) + 1
+                if batch_num % 3 == 0 and i + CHUNK_SIZE < len(tasks):
+                    w = random.uniform(2, 4)
+                    self.logger.info(f"Pausing {w:.1f}s after batch #{batch_num}…")
+                    time.sleep(w)
+
+            page += 1
+
+        return all_jobs, all_skills
+
+
+def scrape_pracuj() -> Tuple[List[JobListing], Dict[str, List[str]]]:
+    """Entry-point for your Azure Function to call."""
     scraper = PracujScraper()
-    scraper.run()
+    return scraper.scrape()
