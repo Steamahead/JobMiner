@@ -1,10 +1,14 @@
+# Web Scraping
 beautifulsoup4==4.12.2
-bs4==0.0.1
 requests==2.28.2
-pyodbc==4.0.39
-pymssql==2.2.7
+pandas==2.2.0
+
+# Azure & Database
 azure-functions>=1.12.0
 azure-identity==1.13.0
-python-dateutil==2.8.2
 azure-storage-blob>=12.0.0
-pandas
+pyodbc==4.0.39
+pymssql==2.2.7
+
+# Utilities
+python-dateutil==2.8.2
