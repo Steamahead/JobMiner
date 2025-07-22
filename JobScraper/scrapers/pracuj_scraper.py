@@ -20,70 +20,24 @@ class PracujScraper(BaseScraper):
         self.search_url = (
             "https://it.pracuj.pl/praca?et=3%2C17%2C4&its=big-data-science"
         )
-        # Define skill categories
+        # --- Skill Categories ---
         self.skill_categories = {
-            "Database": [
-                "sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database",
-                "ms access", "sqlite", "redshift", "snowflake", "microsoft sql server",
-                "teradata", "clickhouse",
-            ],
-            "Microsoft BI & Excel": [
-                "excel", "power query", "power pivot", "vba", "macros", "pivot tables",
-                "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas",
-                "power apps", "power automate", "powerpoint", "office 365",
-            ],
-            "Visualization": [
-                "power bi", "tableau", "qlik", "looker", "data studio", "powerbi", "dax",
-                "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting",
-                "d3.js", "grafana", "kibana", "google charts", "quicksight",
-            ],
-            "Programming": [
-                "python", "r", "java", "scala", "c#", ".net", "javascript", "typescript",
-                "vba", "pandas", "numpy", "jupyter", "scikit-learn", "tidyverse", "julia",
-                "sql scripting", "pl/sql", "t-sql",
-            ],
-            "Data Processing": [
-                "etl", "spark", "hadoop", "kafka", "airflow", "data engineering", "big data",
-                "data cleansing", "data transformation", "data modeling", "data warehouse",
-                "databricks", "dbt", "talend", "informatica",
-            ],
-            "Analytics & Statistics": [
-                "statistics", "regression", "forecasting", "analytics", "analysis", "spss",
-                "sas", "stata", "hypothesis testing", "a/b testing", "statistical",
-                "time series", "clustering", "segmentation", "correlation",
-            ],
-            "Cloud": [
-                "aws", "azure", "gcp", "google cloud", "cloud", "onedrive", "sharepoint",
-                "snowflake", "databricks", "lambda", "s3",
-            ],
-            "Business Intelligence": [
-                "business intelligence", "bi", "cognos", "business objects", "microstrategy",
-                "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense",
-            ],
-            "Machine Learning and AI": [
-                "machine learning", "scikit-learn", "tensorflow", "keras", "pytorch", "deep learning",
-                "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering",
-            ],
-            "Data Governance and Quality": [
-                "data governance", "data quality", "data integrity", "data validation",
-                "master data management", "metadata", "data lineage", "data catalog",
-            ],
-            "Data Privacy and Security": [
-                "data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization",
-            ],
-            "Project Management and Soft Skills": [
-                "project management", "agile", "scrum", "communication", "presentation", "storytelling",
-                "collaboration", "stakeholder management", "requirements gathering", "jira", "confluence",
-            ],
-            "Version Control": [
-                "git", "github", "gitlab", "version control", "bitbucket",
-            ],
-            "Data Integration and APIs": [
-                "api", "rest api", "data integration", "web scraping", "etl tools", "soap", "ip rotation services",
-            ],
-            "ERP and CRM Systems": [
-                "sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday",
-            ],
+            "Database": ["sql", "mysql", "postgresql", "oracle", "nosql", "mongodb", "database", "ms access", "sqlite", "redshift", "snowflake", "microsoft sql server", "teradata", "clickhouse", "azure sql database", "azure sql managed instance", "mariadb", "ms sql", "sql i pl/sql", "oracle forms", "oracle apex", "oracle ebs", "oracle application framework (oaf)", "oracle erp cloud", "sql server", "mssqlserver", "azure sql", "pl/pgsql", "aas", "neteza", "singlestore", "oracle fusion middleware", "oracle jdeveloper"],
+            "Microsoft BI & Excel": ["excel", "power query", "power pivot", "vba", "macros", "pivot tables", "excel formulas", "spreadsheets", "m code", "ssrs", "ssis", "ssas", "power apps", "power automate", "powerpoint", "office 365", "microsoft power bi", "power bi", "power bi.", "ms office", "ms excel", "microsoft dynamics 365", "ms fabric"],
+            "Visualization": ["tableau", "qlik", "looker", "data studio", "powerbi", "dax", "matplotlib", "seaborn", "plotly", "excel charts", "dashboard", "reporting", "d3.js", "grafana", "kibana", "google charts", "quicksight", "sas viya", "di studio", "eg", "sas studio", "visual analytics", "qliksense", "sas va", "qgis", "visio"],
+            "Programming": ["python", "r", "java", "scala", "c#", ".net", "javascript", "typescript", "pandas", "numpy", "jupyter", "scikit-learn", "tidyverse", "julia", "sql scripting", "pl/sql", "t-sql", "linux", "windows", "unix", "windows server", "macos", "shell", "perl", "pyspark", "go", "rust", "c++", "c", "jee", "scala 3", "next.js", "fastapi", "rest", "spring framework", "css", "html", "u-boot", "yocto", "sas4gl", "mql5", "xml", "uml", "bpmn", "golang", "graphql", "spring boot", "hibernate", "flask api", "pytest", "junit", "liquibase", "jest", "angular", "vue.js", "ngrx", "swagger"],
+            "Data Processing": ["etl", "spark", "hadoop", "kafka", "airflow", "data engineering", "big data", "data cleansing", "data transformation", "data modeling", "data warehouse", "databricks", "dbt", "talend", "informatica", "apache spark", "starrocks", "iceberg", "bigquery", "matillion", "data built tool", "apache airflow", "data lake", "adf", "azure data factory", "azure data lake", "parquet", "dwh", "elt/elt", "apache kafka", "alteryx", "azure databricks", "synapse analytics", "informatica cloud"],
+            "Analytics & Statistics": ["statistics", "regression", "forecasting", "analytics", "analysis", "spss", "sas", "stata", "hypothesis testing", "a/b testing", "statistical", "time series", "clustering", "segmentation", "correlation", "adobe analytics", "google analytics", "sas di", "sas eg", "sas 4gl", "sas macro language", "data science", "data analytics"],
+            "Cloud": ["aws", "azure", "gcp", "google cloud", "cloud", "onedrive", "sharepoint", "snowflake", "lambda", "s3", "pub/sub", "dataflow", "terraform", "google cloud services (big query)", "microsoft azure", "snowflake data cloud", "google cloud platform", "sap datasphere", "azure synapse", "azure functions", "azure repos", "microsoft  azure", "redis", "azure event hub", "ansible", "terragrunt", "vertex ai", "sagemaker", "azure devops"],
+            "Business Intelligence": ["business intelligence", "bi", "cognos", "business objects", "microstrategy", "olap", "data mart", "reporting", "kpi", "metrics", "domo", "sisense", "bi publisher", "mis"],
+            "Machine Learning and AI": ["machine learning", "scikit-learn", "tensorflow", "keras", "pytorch", "deep learning", "xgboost", "lightgbm", "nlp", "computer vision", "anomaly detection", "feature engineering", "opencv", "langchain", "pydantic", "langgraph", "hugging face ml tools", "mlops", "dagster", "llm", "ai", "ml", "transformers", "openai api", "tensorrt", "seldon", "onnx", "cap’n proto", "llamaindex", "mlflow", "kubeflow", "vllm", "pinecone", "faiss", "chroma", "llm/nlp", "sciklit-learn", "palantir foundry"],
+            "Data Governance and Quality": ["data governance", "data quality", "data integrity", "data validation", "master data management", "metadata", "data lineage", "data catalog", "atlan", "collibra", "cdi", "cai", "cdgc"],
+            "Data Privacy and Security": ["data privacy", "gdpr", "data security", "compliance", "pii", "data anonymization"],
+            "Project Management and Soft Skills": ["project management", "agile", "scrum", "communication", "presentation", "storytelling", "collaboration", "stakeholder management", "requirements gathering", "jira", "confluence", "agile methodologies", "servicenow", "bugzilla", "otrs"],
+            "Version Control": ["git", "github", "gitlab", "bitbucket", "svn"],
+            "Data Integration and APIs": ["api", "rest api", "data integration", "web scraping", "etl tools", "soap", "ip rotation services", "google python apis", "rest apis", "soapui", "oracle service bus", "oracle soa"],
+            "ERP and CRM Systems": ["sap", "oracle", "salesforce", "dynamics", "erp", "crm", "workday"],
+            "DevOps": ["jenkins", "openshift", "docker", "kubernetes", "bamboo", "ci/cd", "maven", "gradle", "sonarqube", "argocd", "jenkins / ansible", "controlm", "liquiibase", "sonar"]
         }
 
     def _extract_salary(self, salary_text: str) -> Tuple[Optional[int], Optional[int]]:
