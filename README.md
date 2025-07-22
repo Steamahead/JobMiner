@@ -1,4 +1,4 @@
-#JobMiner - pracuj.pl Data Analyst Scraper
+JobMiner - pracuj.pl Data Analyst Scraper
 
 JobMiner is an automated Azure Function that scrapes data analyst job listings from pracuj.pl. It extracts detailed information, identifies key skills, and stores the data in a centralized Azure SQL Database.
 
