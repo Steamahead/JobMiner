@@ -1,3 +1,4 @@
+# steamahead/jobminer/JobMiner-04dfa4217749e2412b383a580c273e2fed5cebed/JobScraper/scrapers/pracuj_scraper.py
 from typing import List, Dict, Tuple, Set, Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -5,7 +6,7 @@ import requests
 import re, math
 import time
 from ..models import JobListing, Skill
-from ..database import insert_job_listing, insert_skill
+from ..database import insert_job_listing
 from .base_scraper import BaseScraper
 import random, os, tempfile, uuid
 from datetime import datetime
